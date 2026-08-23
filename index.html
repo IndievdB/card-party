@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Card Party — P2P Tabletop</title>
+  <meta name="description" content="A peer-to-peer tabletop card game. No server, no rules — just cards, friends, and the honor system." />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🂡</text></svg>" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">🂡 Card Party</div>
+    <nav>
+      <button class="nav-btn" data-nav="home">Home</button>
+      <button class="nav-btn" data-nav="decks">Decks</button>
+      <button class="nav-btn" data-nav="game" id="nav-game">Table</button>
+    </nav>
+  </header>
+
+  <div id="conn-banner" class="conn-banner hidden">⚠ Connection lost — reconnecting… your seat and cards are safe.</div>
+
+  <main>
+    <!-- ============ HOME ============ -->
+    <section id="view-home" class="view">
+      <div class="panel hero">
+        <h1>Play cards with up to 10 friends, peer-to-peer.</h1>
+        <p class="hint">No server, no accounts, no rules — everything is public and the honor system is the only referee.</p>
+
+        <label class="field">
+          <span>Your name</span>
+          <input id="player-name" maxlength="24" placeholder="e.g. Robin" autocomplete="nickname" />
+        </label>
+
+        <div class="home-actions">
+          <button id="btn-host" class="btn primary big-btn">Host a new room</button>
+          <div class="join-row">
+            <input id="join-code" placeholder="ROOM CODE" maxlength="8" autocapitalize="characters" autocomplete="off" spellcheck="false" />
+            <button id="btn-join" class="btn big-btn">Join</button>
+          </div>
+        </div>
+
+        <div id="rejoin-box"></div>
+        <p id="home-deck-note" class="hint"></p>
+      </div>
+    </section>
+
+    <!-- ============ DECK BUILDER ============ -->
+    <section id="view-decks" class="view hidden">
+      <div class="decks-layout">
+        <div class="panel">
+          <h2>Card library</h2>
+          <p class="hint">Load cards live from a Google Sheet shared as “Anyone with the link can view”.
+            Columns: <code>Title</code>, <code>Description</code>, <code>Keywords</code>, <code>Upgrade&nbsp;1</code>, <code>Upgrade&nbsp;2</code>.</p>
+          <div class="sheet-row">
+            <input id="sheet-url" placeholder="Google Sheet URL or ID" />
+            <button id="btn-load-sheet" class="btn primary">Load</button>
+            <button id="btn-demo-cards" class="btn" title="Use the built-in demo card set">Demo cards</button>
+          </div>
+          <p id="sheet-status" class="warn-text"></p>
+          <div class="lib-toolbar">
+            <input id="lib-search" placeholder="Search cards…" />
+            <span id="lib-source" class="hint"></span>
+          </div>
+          <div id="lib-list" class="card-list"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Deck editor</h2>
+          <div class="deck-toolbar">
+            <select id="deck-select"></select>
+            <button id="btn-deck-new" class="btn small">New</button>
+            <button id="btn-deck-delete" class="btn small danger">Delete</button>
+          </div>
+          <label class="field">
+            <span>Deck name</span>
+            <input id="deck-name" maxlength="40" />
+          </label>
+          <div class="deck-toolbar">
+            <button id="btn-deck-save" class="btn small">Save</button>
+            <button id="btn-deck-use" class="btn small primary">✓ Use this deck</button>
+            <button id="btn-deck-clear" class="btn small warn">Clear</button>
+            <span class="random-row">
+              <input id="random-count" type="number" min="1" max="60" value="10" />
+              <button id="btn-deck-random" class="btn small">🎲 Add random</button>
+            </span>
+          </div>
+          <p class="deck-meta"><strong id="deck-count"></strong> · <span id="deck-active-note"></span></p>
+          <div id="deck-list" class="card-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ GAME TABLE ============ -->
+    <section id="view-game" class="view hidden">
+      <div id="game-root"></div>
+    </section>
+  </main>
+
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
+  <script src="js/vendor/peerjs.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
