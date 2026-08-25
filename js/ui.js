@@ -1,7 +1,11 @@
 // DOM helpers, toasts, modals, and the game-table renderer.
-// The whole table re-renders on every state broadcast (states are small).
+//
+// The table is drawn to look and feel physical: cards keep real card
+// proportions with paper faces and owner-colored backs, decks are stacked
+// piles, hands fan out, placed cards sit at slightly crooked angles, and a
+// FLIP pass animates every card sliding across the felt between re-renders.
 
-import { ZONES, ZONE_LABELS, getSeat } from './game.js';
+import { ZONES, ZONE_LABELS, getSeat, findCard } from './game.js';
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -22,6 +26,14 @@ export function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+// Deterministic per-card jitter so placed cards look set down by hand and
+// keep their exact crooked angle across re-renders.
+function jitterDeg(id, range = 2.4) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return (((Math.abs(h) % 1000) / 1000) * 2 - 1) * range;
+}
+
 // ---------- toasts ----------
 
 export function toast(message, kind = 'info') {
@@ -39,6 +51,7 @@ export function toast(message, kind = 'info') {
 // One modal at a time; it re-renders when new state arrives so open panels stay live.
 
 let modal = null; // { kind, params }
+let modalCtx = null; // { state, ctx } refreshed by renderGame
 
 export function openModal(kind, params = {}) {
   modal = { kind, params };
@@ -54,11 +67,10 @@ export function refreshModal() {
   if (modal) renderModal();
 }
 
-let modalCtx = null; // { state, ctx } refreshed by renderGame
-
 function renderModal() {
   const root = document.getElementById('modal-root');
   if (!modal) return root.replaceChildren();
+  hidePeek();
   const { kind, params } = modal;
   let title = '';
   let body = null;
@@ -106,10 +118,10 @@ function helpBody() {
     p('Card Party is a rules-free shared tabletop. Everything is public and anything goes — the honor system is the only referee.'),
     el('ul', {},
       el('li', { text: 'Each player has a Deck, a Hand, a Discard pile, and a Delayed space. All four are visible to everyone.' }),
-      el('li', { text: 'Drag any card onto any zone — yours or another player’s deck, hand, discard, or Delayed space.' }),
-      el('li', { text: 'Click a card for details, to pick one of its two upgrade options, or to move it precisely (e.g. bottom of a deck).' }),
-      el('li', { text: 'Click any pile (deck/discard) to look through it — decks are public too.' }),
-      el('li', { text: 'Cards always remember their original owner (the colored stripe).' }),
+      el('li', { text: 'Tap your own deck to draw a card. Drag any card onto any zone — yours or another player’s.' }),
+      el('li', { text: 'Hover a card to read it; click it to pick it up — choose an upgrade option or move it precisely (e.g. bottom of a deck).' }),
+      el('li', { text: 'Click any other pile to look through it — decks are public too.' }),
+      el('li', { text: 'A card’s back and seal are colored by its original owner; it never forgets whose it is.' }),
       el('li', { text: 'If you disconnect, rejoin with the same room code from the same browser and you get your seat and cards back.' }),
       el('li', { text: 'The host can kick/block players, and send every card back to its owner’s deck.' }),
     ),
@@ -124,41 +136,98 @@ export function ownerColor(state, ownerId) {
   return `var(--seat-${(i >= 0 ? i : 0) % 10})`;
 }
 
+// A physical-looking card. Sizes: 'hand' (my hand), 'table' (my board),
+// 'mini' (other players), 'big' (modal / hover peek).
 export function cardEl(state, ctx, cardId, opts = {}) {
   const card = state.cards[cardId];
   if (!card) return el('div');
   const size = opts.size || 'mini';
+  const interactive = !opts.inert;
   const node = el('div', {
     class: `card ${size}` + (card.upgrade != null ? ' upgraded' : ''),
-    draggable: 'true',
-    title: card.description || card.title,
-    onClick: (e) => { e.stopPropagation(); openModal('card', { cardId }); },
-    onDragstart: (e) => {
-      e.dataTransfer.setData('text/plain', cardId);
-      e.dataTransfer.effectAllowed = 'move';
-      node.classList.add('dragging');
-    },
-    onDragend: () => node.classList.remove('dragging'),
+    dataset: interactive ? { cardId } : null,
+    draggable: interactive ? 'true' : null,
   });
   node.style.setProperty('--owner', ownerColor(state, card.ownerId));
 
-  node.append(el('div', { class: 'card-title', text: card.title }));
-  if (card.keywords.length) {
-    node.append(el('div', { class: 'card-keywords' },
-      card.keywords.map((k) => el('span', { class: 'kw', text: k }))));
-  }
-  if (size === 'big' && card.description) {
-    node.append(el('div', { class: 'card-desc', text: card.description }));
-  }
-  if (card.upgrade != null) {
-    node.append(el('div', { class: 'card-upgrade-tag', text: '★ ' + (card.upgrade === 0 ? 'A' : 'B') }));
-  }
+  const face = el('div', { class: 'card-face' });
+  face.append(el('div', { class: 'card-titlebar' }, el('span', { class: 'card-title', text: card.title })));
+
   const foreign = opts.zoneOwnerId && opts.zoneOwnerId !== card.ownerId;
   if (foreign) {
-    node.append(el('div', { class: 'card-owner', text: card.ownerName + '’s' }));
+    face.append(el('div', { class: 'card-owner', text: card.ownerName + '’s' }));
+  }
+
+  if (card.keywords.length) {
+    face.append(el('div', { class: 'card-keywords' },
+      card.keywords.map((k) => el('span', { class: 'kw', text: k }))));
+  }
+  if (card.description) {
+    face.append(el('div', { class: 'card-desc', text: card.description }));
+  }
+
+  // Big cards print both upgrade options, like the physical card would;
+  // the chosen one is gilded. Small sizes just show the gold tag.
+  if (size === 'big' && (card.upgrades[0] || card.upgrades[1])) {
+    face.append(el('div', { class: 'card-ups' },
+      [0, 1].map((i) => card.upgrades[i]
+        ? el('div', { class: 'up-line' + (card.upgrade === i ? ' sel' : '') },
+            el('span', { class: 'up-star', text: '★' + (i === 0 ? 'A' : 'B') }),
+            el('span', { text: card.upgrades[i] }))
+        : null)));
+  }
+  node.append(face);
+  face.append(el('div', { class: 'card-seal', title: 'Owner: ' + card.ownerName }));
+  if (card.upgrade != null && size !== 'big') {
+    node.append(el('div', { class: 'card-upgrade-tag', text: '★' + (card.upgrade === 0 ? 'A' : 'B') }));
+  }
+
+  if (interactive) {
+    node.addEventListener('click', (e) => { e.stopPropagation(); hidePeek(); openModal('card', { cardId }); });
+    node.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', cardId);
+      e.dataTransfer.effectAllowed = 'move';
+      node.classList.add('dragging');
+      hidePeek();
+    });
+    node.addEventListener('dragend', () => node.classList.remove('dragging'));
+    if (size !== 'big') {
+      node.addEventListener('mouseenter', () => showPeek(state, ctx, cardId));
+      node.addEventListener('mouseleave', hidePeek);
+    }
   }
   return node;
 }
+
+// A slot positions a card on the felt (fan angle / placement jitter) via CSS
+// custom props, so the card element itself stays free for FLIP + hover lift.
+function slot(cardNode, { rot = 0, ty = 0, cls = '' } = {}) {
+  const s = el('div', { class: 'cslot ' + cls }, cardNode);
+  s.style.setProperty('--rot', rot.toFixed(2) + 'deg');
+  s.style.setProperty('--ty', ty.toFixed(1) + 'px');
+  return s;
+}
+
+// ---------- hover peek (pick a card up to read it) ----------
+
+let peekTimer = null;
+
+function showPeek(state, ctx, cardId) {
+  clearTimeout(peekTimer);
+  peekTimer = setTimeout(() => {
+    const root = document.getElementById('card-peek');
+    if (!root || !state.cards[cardId]) return;
+    root.replaceChildren(cardEl(state, ctx, cardId, { size: 'big', inert: true }));
+    root.classList.add('show');
+  }, 250);
+}
+
+export function hidePeek() {
+  clearTimeout(peekTimer);
+  document.getElementById('card-peek')?.classList.remove('show');
+}
+
+// ---------- drag & drop ----------
 
 export function makeDropTarget(node, ctx, playerId, zone) {
   node.addEventListener('dragover', (e) => {
@@ -169,6 +238,7 @@ export function makeDropTarget(node, ctx, playerId, zone) {
   node.addEventListener('dragleave', () => node.classList.remove('drop-hint'));
   node.addEventListener('drop', (e) => {
     e.preventDefault();
+    e.stopPropagation();
     node.classList.remove('drop-hint');
     const cardId = e.dataTransfer.getData('text/plain');
     if (!cardId) return;
@@ -177,25 +247,116 @@ export function makeDropTarget(node, ctx, playerId, zone) {
   return node;
 }
 
+// ---------- FLIP animations: cards physically slide across the felt ----------
+
+const flip = {
+  cards: new Map(), // cardId -> { rect, el } from the previous DOM
+  piles: new Map(), // "playerId:zone" -> rect from the previous DOM
+  locs: new Map(),  // cardId -> "playerId:zone" from the previous state
+};
+
+function captureRects(root) {
+  flip.cards.clear();
+  flip.piles.clear();
+  for (const node of root.querySelectorAll('[data-card-id]')) {
+    flip.cards.set(node.dataset.cardId, { rect: node.getBoundingClientRect(), el: node });
+  }
+  for (const node of root.querySelectorAll('[data-pile]')) {
+    flip.piles.set(node.dataset.pile, node.getBoundingClientRect());
+  }
+}
+
+function locOf(state, cardId) {
+  const loc = findCard(state, cardId);
+  return loc ? loc.seat.playerId + ':' + loc.zone : null;
+}
+
+function playAnimations(root, state) {
+  const seen = new Set();
+  for (const node of root.querySelectorAll('[data-card-id]')) {
+    const id = node.dataset.cardId;
+    seen.add(id);
+    const now = node.getBoundingClientRect();
+    if (!now.width) continue;
+    const prev = flip.cards.get(id);
+    let from = prev?.rect;
+    // Card just surfaced from a hidden pile (e.g. drawn off a deck):
+    // animate it flying out of that pile.
+    if (!from) {
+      const oldLoc = flip.locs.get(id);
+      if (oldLoc) from = flip.piles.get(oldLoc);
+    }
+    if (from) {
+      const dx = from.left + from.width / 2 - (now.left + now.width / 2);
+      const dy = from.top + from.height / 2 - (now.top + now.height / 2);
+      if (Math.abs(dx) + Math.abs(dy) > 6) {
+        const scale = from.width && now.width ? from.width / now.width : 1;
+        node.style.transition = 'none';
+        node.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
+        node.classList.add('flying');
+        requestAnimationFrame(() => {
+          node.style.transition = 'transform .38s cubic-bezier(.2,.75,.3,1)';
+          node.style.transform = '';
+          setTimeout(() => {
+            node.style.transition = '';
+            node.classList.remove('flying');
+          }, 450);
+        });
+      }
+    } else if (flip.locs.size && !flip.locs.has(id)) {
+      node.classList.add('dealt'); // brand-new card (deck load): flip in
+    }
+  }
+
+  // Cards that were visible and are now buried in a pile: send a ghost flying
+  // onto the pile so they don't just blink out of existence.
+  const fx = document.getElementById('fx-layer');
+  if (fx) {
+    for (const [id, prev] of flip.cards) {
+      if (seen.has(id)) continue;
+      const locKey = locOf(state, id);
+      if (!locKey) continue;
+      const target = root.querySelector(`[data-pile="${locKey}"]`)?.getBoundingClientRect();
+      if (!target || !prev.rect.width) continue;
+      const ghost = prev.el.cloneNode(true);
+      ghost.classList.add('ghost');
+      Object.assign(ghost.style, {
+        position: 'fixed',
+        left: prev.rect.left + 'px',
+        top: prev.rect.top + 'px',
+        width: prev.rect.width + 'px',
+        height: prev.rect.height + 'px',
+        margin: '0',
+        transform: '',
+        transition: 'none',
+      });
+      fx.append(ghost);
+      const dx = target.left + target.width / 2 - (prev.rect.left + prev.rect.width / 2);
+      const dy = target.top + target.height / 2 - (prev.rect.top + prev.rect.height / 2);
+      requestAnimationFrame(() => {
+        ghost.style.transition = 'transform .4s cubic-bezier(.3,.6,.3,1), opacity .4s ease-in';
+        ghost.style.transform = `translate(${dx}px, ${dy}px) scale(.3)`;
+        ghost.style.opacity = '0.1';
+      });
+      setTimeout(() => ghost.remove(), 460);
+    }
+  }
+
+  flip.locs.clear();
+  for (const seat of state.seats) {
+    for (const zone of ZONES) {
+      for (const id of seat.zones[zone]) flip.locs.set(id, seat.playerId + ':' + zone);
+    }
+  }
+}
+
 // ---------- card modal ----------
 
 function cardModalBody(state, ctx, card) {
-  const loc = (() => {
-    for (const seat of state.seats) {
-      for (const zone of ZONES) {
-        if (seat.zones[zone].includes(card.id)) return { seat, zone };
-      }
-    }
-    return null;
-  })();
-
+  const loc = findCard(state, card.id);
   const wrap = el('div', { class: 'card-detail' });
-  wrap.style.setProperty('--owner', ownerColor(state, card.ownerId));
 
-  if (card.keywords.length) {
-    wrap.append(el('div', { class: 'card-keywords' }, card.keywords.map((k) => el('span', { class: 'kw', text: k }))));
-  }
-  wrap.append(el('p', { class: 'detail-desc', text: card.description || '(no description)' }));
+  wrap.append(el('div', { class: 'detail-card-wrap' }, cardEl(state, ctx, card.id, { size: 'big', inert: true })));
   wrap.append(el('p', { class: 'detail-meta' },
     `Owned by ${card.ownerName}`,
     loc ? ` · currently in ${loc.seat.name}’s ${ZONE_LABELS[loc.zone].toLowerCase()}` : '',
@@ -285,14 +446,19 @@ function zoneModalBody(state, ctx, seat, zone) {
     if (!card) return;
     const row = el('div', { class: 'zone-row' },
       zone === 'deck' ? el('span', { class: 'zone-index', text: String(i + 1) }) : null,
-      cardEl(state, ctx, cardId, { size: 'mini', zoneOwnerId: seat.playerId }),
+      el('div', { class: 'zone-row-info' },
+        el('span', { class: 'zone-row-title', text: card.title }),
+        card.keywords.length ? el('span', { class: 'card-keywords' }, card.keywords.map((k) => el('span', { class: 'kw', text: k }))) : null,
+      ),
       el('div', { class: 'zone-row-actions' },
+        el('button', { class: 'btn small', text: 'View', onClick: () => openModal('card', { cardId }) }),
         el('button', {
           class: 'btn small', text: '→ my hand',
           onClick: () => ctx.dispatch({ type: 'moveCard', cardId, to: { playerId: ctx.myId, zone: 'hand' } }),
         }),
       ),
     );
+    row.style.setProperty('--owner', ownerColor(state, card.ownerId));
     wrap.append(row);
   });
   return wrap;
@@ -348,6 +514,8 @@ function adminModalBody(state, ctx) {
 
 export function renderGame(root, state, ctx) {
   modalCtx = { state, ctx };
+  captureRects(root);
+  hidePeek();
   root.replaceChildren();
 
   const me = getSeat(state, ctx.myId);
@@ -372,24 +540,111 @@ export function renderGame(root, state, ctx) {
     ),
   ));
 
-  // Other players
+  // The table itself: wooden rim around a felt playing surface.
+  const felt = el('div', { class: 'table-felt' });
   const grid = el('div', { class: 'others-grid' });
   for (const seat of others) grid.append(seatPanel(state, ctx, seat, false));
   if (!others.length) {
     grid.append(el('div', { class: 'waiting-note' },
-      el('p', { text: 'No one else is here yet. Share the room code:' }),
+      el('p', { text: 'No one else is at the table yet. Share the room code:' }),
       el('p', { class: 'big-code', text: state.roomCode }),
     ));
   }
-  root.append(grid);
+  felt.append(grid);
+  if (me) felt.append(seatPanel(state, ctx, me, true));
+  root.append(el('div', { class: 'table-rim' }, felt));
 
-  // My board
-  if (me) root.append(seatPanel(state, ctx, me, true));
+  playAnimations(root, state);
+  refreshModal();
 }
 
 function statusLabel(ctx) {
   if (ctx.isHost) return 'hosting';
   return ctx.status === 'connected' ? 'connected' : ctx.status + '…';
+}
+
+function pileKey(seat, zone) {
+  return seat.playerId + ':' + zone;
+}
+
+// Deck: a stack of owner-colored card backs, thickness tracking the count.
+function deckPileEl(state, ctx, seat, isMe) {
+  const count = seat.zones.deck.length;
+  const layers = Math.max(count > 0 ? 1 : 0, Math.min(4, Math.ceil(count / 6)));
+  const stack = el('div', { class: 'pile-stack' });
+  for (let i = 0; i < layers; i++) {
+    const back = el('div', { class: 'card-back' });
+    back.style.setProperty('--owner', ownerColor(state, seat.playerId));
+    back.style.setProperty('--stack-i', i);
+    stack.append(back);
+  }
+  if (!count) stack.append(el('div', { class: 'pile-empty-mark' }));
+
+  const pile = el('div', {
+    class: 'pile deck' + (isMe ? ' mine' : ''),
+    dataset: { pile: pileKey(seat, 'deck') },
+    title: isMe
+      ? 'Tap to draw a card · drop a card to put it on top'
+      : `${seat.name}’s deck — click to look through it (decks are public)`,
+    onClick: () => {
+      if (isMe) ctx.dispatch({ type: 'draw', n: 1 });
+      else openModal('zone', { playerId: seat.playerId, zone: 'deck' });
+    },
+  }, stack, el('div', { class: 'pile-count', text: String(count) }), el('div', { class: 'pile-tag', text: 'Deck' }));
+  return makeDropTarget(pile, ctx, seat.playerId, 'deck');
+}
+
+// Discard: the top card lies face-up, slightly crooked, on a soft stack.
+function discardPileEl(state, ctx, seat, isMe) {
+  const ids = seat.zones.discard;
+  const topId = ids[ids.length - 1];
+  const pile = el('div', {
+    class: 'pile discard' + (topId ? ' has-cards' : ''),
+    dataset: { pile: pileKey(seat, 'discard') },
+    title: 'Click to browse the discard pile · drop a card to discard it here',
+    onClick: () => openModal('zone', { playerId: seat.playerId, zone: 'discard' }),
+  });
+  if (topId) {
+    const card = cardEl(state, ctx, topId, { size: isMe ? 'table' : 'mini', zoneOwnerId: seat.playerId });
+    pile.append(slot(card, { rot: jitterDeg(topId, 5) }));
+  } else {
+    pile.append(el('div', { class: 'pile-empty-mark' }));
+  }
+  pile.append(el('div', { class: 'pile-count', text: String(ids.length) }), el('div', { class: 'pile-tag', text: 'Discard' }));
+  return makeDropTarget(pile, ctx, seat.playerId, 'discard');
+}
+
+function delayedStripEl(state, ctx, seat, isMe) {
+  const ids = seat.zones.delayed;
+  const strip = el('div', { class: 'zone-strip delayed', dataset: { pile: pileKey(seat, 'delayed') } },
+    el('div', { class: 'strip-label', text: 'Delayed' }),
+    el('div', { class: 'strip-cards' },
+      ids.map((id) => slot(
+        cardEl(state, ctx, id, { size: isMe ? 'table' : 'mini', zoneOwnerId: seat.playerId }),
+        { rot: jitterDeg(id) },
+      )),
+    ),
+  );
+  return makeDropTarget(strip, ctx, seat.playerId, 'delayed');
+}
+
+function handStripEl(state, ctx, seat, isMe) {
+  const ids = seat.zones.hand;
+  const n = ids.length;
+  const spread = Math.min(isMe ? 32 : 18, n * (isMe ? 6 : 4));
+  const strip = el('div', { class: 'zone-strip hand' + (isMe ? ' fan' : ''), dataset: { pile: pileKey(seat, 'hand') } },
+    el('div', { class: 'strip-label', text: 'Hand' }),
+    el('div', { class: 'strip-cards' },
+      ids.map((id, i) => {
+        const t = n <= 1 ? 0 : i / (n - 1) - 0.5;
+        return slot(
+          cardEl(state, ctx, id, { size: isMe ? 'hand' : 'mini', zoneOwnerId: seat.playerId }),
+          { rot: t * spread, ty: Math.abs(t) * spread * (isMe ? 1.1 : 0.7), cls: 'fanned' },
+        );
+      }),
+    ),
+  );
+  return makeDropTarget(strip, ctx, seat.playerId, 'hand');
 }
 
 function seatPanel(state, ctx, seat, isMe) {
@@ -402,57 +657,32 @@ function seatPanel(state, ctx, seat, isMe) {
     seat.playerId === state.hostPlayerId ? el('span', { class: 'badge', text: 'HOST' }) : null,
   ));
 
-  const zones = el('div', { class: 'seat-zones' });
-
-  // Deck + discard piles
-  const piles = el('div', { class: 'piles' });
-  const deckPile = makeDropTarget(el('div', {
-    class: 'pile deck', title: 'Click to browse (decks are public!) · drop a card to put it on top',
-    onClick: () => openModal('zone', { playerId: seat.playerId, zone: 'deck' }),
-  },
-    el('div', { class: 'pile-label', text: 'Deck' }),
-    el('div', { class: 'pile-count', text: String(seat.zones.deck.length) }),
-  ), ctx, seat.playerId, 'deck');
-  const topDiscard = seat.zones.discard[seat.zones.discard.length - 1];
-  const discardPile = makeDropTarget(el('div', {
-    class: 'pile discard', title: 'Click to browse · drop a card to discard it here',
-    onClick: () => openModal('zone', { playerId: seat.playerId, zone: 'discard' }),
-  },
-    el('div', { class: 'pile-label', text: 'Discard' }),
-    el('div', { class: 'pile-count', text: String(seat.zones.discard.length) }),
-    topDiscard ? el('div', { class: 'pile-top', text: state.cards[topDiscard]?.title || '' }) : null,
-  ), ctx, seat.playerId, 'discard');
-  piles.append(deckPile, discardPile);
-
   if (isMe) {
-    piles.append(el('div', { class: 'pile-actions' },
+    const actions = el('div', { class: 'pile-actions' },
       el('button', { class: 'btn small primary', text: 'Draw', onClick: () => ctx.dispatch({ type: 'draw', n: 1 }) }),
       el('button', { class: 'btn small', text: 'Draw 5', onClick: () => ctx.dispatch({ type: 'draw', n: 5 }) }),
       el('button', { class: 'btn small', text: '🔀 Shuffle', onClick: () => { ctx.dispatch({ type: 'shuffle', zone: 'deck' }); toast('Deck shuffled'); } }),
+      el('button', {
+        class: 'btn small', text: '🔍 Search', title: 'Look through your own deck',
+        onClick: () => openModal('zone', { playerId: seat.playerId, zone: 'deck' }),
+      }),
+    );
+    panel.append(
+      delayedStripEl(state, ctx, seat, true),
+      el('div', { class: 'my-lower' },
+        el('div', { class: 'my-piles' }, deckPileEl(state, ctx, seat, true), actions),
+        handStripEl(state, ctx, seat, true),
+        el('div', { class: 'my-piles' }, discardPileEl(state, ctx, seat, true)),
+      ),
+    );
+  } else {
+    panel.append(el('div', { class: 'seat-zones' },
+      el('div', { class: 'piles' }, deckPileEl(state, ctx, seat, false), discardPileEl(state, ctx, seat, false)),
+      el('div', { class: 'seat-strips' },
+        delayedStripEl(state, ctx, seat, false),
+        handStripEl(state, ctx, seat, false),
+      ),
     ));
   }
-  zones.append(piles);
-
-  // Delayed space
-  const delayed = makeDropTarget(el('div', { class: 'zone-strip delayed' },
-    el('div', { class: 'strip-label', text: `Delayed (${seat.zones.delayed.length})` }),
-    el('div', { class: 'strip-cards' },
-      seat.zones.delayed.map((id) => cardEl(state, ctx, id, { size: isMe ? 'small' : 'mini', zoneOwnerId: seat.playerId })),
-      seat.zones.delayed.length ? null : el('span', { class: 'empty', text: 'empty' }),
-    ),
-  ), ctx, seat.playerId, 'delayed');
-  zones.append(delayed);
-
-  // Hand — public, like everything else
-  const hand = makeDropTarget(el('div', { class: 'zone-strip hand' },
-    el('div', { class: 'strip-label', text: `Hand (${seat.zones.hand.length})` }),
-    el('div', { class: 'strip-cards' },
-      seat.zones.hand.map((id) => cardEl(state, ctx, id, { size: isMe ? 'small' : 'mini', zoneOwnerId: seat.playerId })),
-      seat.zones.hand.length ? null : el('span', { class: 'empty', text: 'empty' }),
-    ),
-  ), ctx, seat.playerId, 'hand');
-  zones.append(hand);
-
-  panel.append(zones);
   return panel;
 }

@@ -66,9 +66,11 @@ available until you configure a sheet.
 2. One player clicks **Host a new room** and shares the 5-letter room code.
 3. Others enter the code and **Join**. Each player arrives with their active
    deck, shuffled.
-4. Draw, drag, discard, delay, upgrade, and shuffle. Move cards into other
-   players' hands, decks, discard piles or Delayed spaces freely — there are
-   no enforced rules.
+4. Tap your deck to draw. Drag cards anywhere — into other players' hands,
+   decks, discard piles or Delayed spaces; there are no enforced rules.
+   Hover a card to read it, click it to pick it up (upgrades, precise moves).
+   Cards slide across the felt when anyone moves them, and card backs are
+   colored by their original owner.
 
 ### Reconnecting
 
