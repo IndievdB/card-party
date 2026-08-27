@@ -629,18 +629,14 @@ function delayedStripEl(state, ctx, seat, isMe) {
 
 function handStripEl(state, ctx, seat, isMe) {
   const ids = seat.zones.hand;
-  const n = ids.length;
-  const spread = Math.min(isMe ? 32 : 18, n * (isMe ? 6 : 4));
-  const strip = el('div', { class: 'zone-strip hand' + (isMe ? ' fan' : ''), dataset: { pile: pileKey(seat, 'hand') } },
+  const strip = el('div', { class: 'zone-strip hand', dataset: { pile: pileKey(seat, 'hand') } },
     el('div', { class: 'strip-label', text: 'Hand' }),
     el('div', { class: 'strip-cards' },
-      ids.map((id, i) => {
-        const t = n <= 1 ? 0 : i / (n - 1) - 0.5;
-        return slot(
-          cardEl(state, ctx, id, { size: isMe ? 'hand' : 'mini', zoneOwnerId: seat.playerId }),
-          { rot: t * spread, ty: Math.abs(t) * spread * (isMe ? 1.1 : 0.7), cls: 'fanned' },
-        );
-      }),
+      // Side by side, never overlapping — just a slight hand-placed tilt.
+      ids.map((id) => slot(
+        cardEl(state, ctx, id, { size: isMe ? 'hand' : 'mini', zoneOwnerId: seat.playerId }),
+        { rot: jitterDeg(id, 1.2) },
+      )),
     ),
   );
   return makeDropTarget(strip, ctx, seat.playerId, 'hand');

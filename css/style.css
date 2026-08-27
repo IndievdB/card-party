@@ -290,8 +290,6 @@ input::placeholder { color: var(--faint); }
   transform: rotate(var(--rot, 0deg)) translateY(var(--ty, 0px));
   transition: transform .18s ease;
 }
-.fan .cslot { margin: 0 calc(var(--fan-overlap, -18px)); }
-.fan .cslot:hover { transform: rotate(0deg) translateY(calc(var(--ty, 0px) - 26px)); z-index: 7; position: relative; }
 
 /* card back (deck piles) */
 .card-back {
@@ -437,24 +435,13 @@ input::placeholder { color: var(--faint); }
 }
 .my-piles { display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .pile-actions { display: flex; flex-direction: column; gap: 5px; width: 100%; }
-.zone-strip.hand.fan { padding: 16px 10px 10px; }
-.zone-strip.hand.fan .strip-cards {
-  justify-content: center;
-  flex-wrap: nowrap;
-  padding: 8px 30px 2px;
-  min-height: 150px;
-  align-items: flex-start;
-  overflow: visible;
-}
-.fan { --fan-overlap: -16px; }
+.seat.me .zone-strip.hand .strip-cards { gap: 12px; padding: 4px 2px; }
 
 /* other seats: compact place settings */
 .seat-zones { display: flex; gap: 12px; align-items: flex-start; }
 .seat-strips { display: flex; flex-direction: column; gap: 14px; flex: 1; min-width: 0; }
 .seat:not(.me) .zone-strip { min-height: 52px; padding: 12px 8px 6px; }
-.seat:not(.me) .strip-cards { min-height: 36px; gap: 6px; }
-.seat:not(.me) .fan .cslot, .seat:not(.me) .zone-strip.hand .cslot { margin: 0 -12px; }
-.seat:not(.me) .zone-strip.hand .strip-cards { padding: 0 14px; flex-wrap: nowrap; overflow-x: auto; overflow-y: visible; }
+.seat:not(.me) .strip-cards { min-height: 36px; gap: 7px; }
 
 @media (max-width: 760px) {
   .my-lower { grid-template-columns: 1fr; }
