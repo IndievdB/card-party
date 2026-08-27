@@ -10,6 +10,12 @@ let session = null; // HostSession | ClientSession
 let latestState = null;
 let clientStatus = 'connecting';
 
+// "Last room" is remembered per identity, so each tab (= each player) gets
+// its own rejoin/restore offer.
+function lastRoomKey() {
+  return 'lastRoom.' + getIdentity().playerId;
+}
+
 const views = ['home', 'decks', 'game'];
 
 function showView(name) {
@@ -103,7 +109,7 @@ function renderLoadDeckModal() {
   }
   if (!names.length) wrap.append(el('p', { class: 'empty', text: 'No saved decks yet — build one on the Decks screen.' }));
   wrap.append(el('button', {
-    class: 'btn wide', text: `🎲 Random 20 from library (${getLibrary().length} cards)`,
+    class: 'btn wide', text: `Random 20 from library (${getLibrary().length} cards)`,
     onClick: () => {
       dispatch({ type: 'resetMyCards', deck: randomDeckFromLibrary(20) });
       closeModal();
@@ -122,10 +128,13 @@ async function hostGame({ restore = false } = {}) {
 
   let code, state;
   if (restore) {
-    const last = store.get('lastRoom');
+    const last = store.get(lastRoomKey());
     code = last?.code;
     state = code && store.get('hostState.' + code);
     if (!state) return toast('No saved room to restore.', 'warn');
+    if (state.hostPlayerId !== identity.playerId) {
+      return toast('That room was hosted by a different player in this browser.', 'warn');
+    }
     // Everyone shows as disconnected until they reconnect.
     for (const seat of state.seats) {
       seat.connected = seat.playerId === identity.playerId;
@@ -179,7 +188,7 @@ async function hostGame({ restore = false } = {}) {
   setBusy(false);
 
   session = host;
-  store.set('lastRoom', { code, role: 'host' });
+  store.set(lastRoomKey(), { code, role: 'host' });
   store.set('hostState.' + code, state);
   showView('game');
   onState(state);
@@ -212,7 +221,7 @@ function joinGame(codeInput) {
       onDenied: (reason) => toast(reason, 'warn'),
       onKicked: () => {
         endSession();
-        store.del('lastRoom');
+        store.del(lastRoomKey());
         showView('home');
         alert('You were removed from the room by the host.');
       },
@@ -225,7 +234,7 @@ function joinGame(codeInput) {
   });
   session = client;
   client.connect();
-  store.set('lastRoom', { code, role: 'client' });
+  store.set(lastRoomKey(), { code, role: 'client' });
   showView('game');
   renderConnecting(code);
 }
@@ -261,7 +270,7 @@ function leaveGame() {
   if (session?.role === 'host') {
     if (!confirm('Close the room? Players will be disconnected, but you can restore this room later from the home screen.')) return;
   } else {
-    store.del('lastRoom');
+    store.del(lastRoomKey());
   }
   endSession();
   showView('home');
@@ -280,20 +289,23 @@ function renderHome() {
     ? `Active deck: “${deckName}” (${defs.length} cards)`
     : 'No active deck yet — build one, or join and pick a random deck later.';
 
-  const last = store.get('lastRoom');
+  const last = store.get(lastRoomKey());
   const rejoinBox = document.getElementById('rejoin-box');
   rejoinBox.replaceChildren();
   if (last?.code) {
     if (last.role === 'client') {
       rejoinBox.append(el('button', {
-        class: 'btn wide', text: `↻ Rejoin room ${last.code} (your seat & cards are waiting)`,
+        class: 'btn wide', text: `Rejoin room ${last.code} — your seat and cards are waiting`,
         onClick: () => joinGame(last.code),
       }));
-    } else if (store.get('hostState.' + last.code)) {
-      rejoinBox.append(el('button', {
-        class: 'btn wide', text: `↻ Restore your room ${last.code} as host`,
-        onClick: () => hostGame({ restore: true }),
-      }));
+    } else {
+      const saved = store.get('hostState.' + last.code);
+      if (saved && saved.hostPlayerId === identity.playerId) {
+        rejoinBox.append(el('button', {
+          class: 'btn wide', text: `Restore your room ${last.code} as host`,
+          onClick: () => hostGame({ restore: true }),
+        }));
+      }
     }
   }
 }

@@ -434,7 +434,7 @@ function zoneModalBody(state, ctx, seat, zone) {
     wrap.append(el('div', { class: 'zone-note' },
       el('span', { text: 'Top card first. ' }),
       el('button', {
-        class: 'btn small', text: '🔀 Shuffle',
+        class: 'btn small', text: 'Shuffle',
         onClick: () => { ctx.dispatch({ type: 'shuffle', playerId: seat.playerId, zone: 'deck' }); toast('Deck shuffled'); },
       }),
     ));
@@ -532,16 +532,15 @@ export function renderGame(root, state, ctx) {
       el('span', { class: 'pill', text: `${state.seats.length}/10 players` }),
     ),
     el('div', { class: 'game-actions' },
-      el('button', { class: 'btn small', text: '✎ ' + (me ? me.name : 'Name'), title: 'Rename yourself', onClick: ctx.renameSelf }),
-      el('button', { class: 'btn small', text: '🂠 Load deck', onClick: ctx.openLoadDeck }),
-      ctx.isHost ? el('button', { class: 'btn small', text: '⚙ Admin', onClick: () => openModal('admin') }) : null,
-      el('button', { class: 'btn small', text: '? Help', onClick: () => openModal('help') }),
+      el('button', { class: 'btn small', text: (me ? me.name : 'Name'), title: 'Rename yourself', onClick: ctx.renameSelf }),
+      el('button', { class: 'btn small', text: 'Load deck', onClick: ctx.openLoadDeck }),
+      ctx.isHost ? el('button', { class: 'btn small', text: 'Admin', onClick: () => openModal('admin') }) : null,
+      el('button', { class: 'btn small', text: 'Help', onClick: () => openModal('help') }),
       el('button', { class: 'btn small danger', text: 'Leave', onClick: ctx.leave }),
     ),
   ));
 
-  // The table itself: wooden rim around a felt playing surface.
-  const felt = el('div', { class: 'table-felt' });
+  const table = el('div', { class: 'table' });
   const grid = el('div', { class: 'others-grid' });
   for (const seat of others) grid.append(seatPanel(state, ctx, seat, false));
   if (!others.length) {
@@ -550,9 +549,9 @@ export function renderGame(root, state, ctx) {
       el('p', { class: 'big-code', text: state.roomCode }),
     ));
   }
-  felt.append(grid);
-  if (me) felt.append(seatPanel(state, ctx, me, true));
-  root.append(el('div', { class: 'table-rim' }, felt));
+  table.append(grid);
+  if (me) table.append(seatPanel(state, ctx, me, true));
+  root.append(table);
 
   playAnimations(root, state);
   refreshModal();
@@ -661,9 +660,9 @@ function seatPanel(state, ctx, seat, isMe) {
     const actions = el('div', { class: 'pile-actions' },
       el('button', { class: 'btn small primary', text: 'Draw', onClick: () => ctx.dispatch({ type: 'draw', n: 1 }) }),
       el('button', { class: 'btn small', text: 'Draw 5', onClick: () => ctx.dispatch({ type: 'draw', n: 5 }) }),
-      el('button', { class: 'btn small', text: '🔀 Shuffle', onClick: () => { ctx.dispatch({ type: 'shuffle', zone: 'deck' }); toast('Deck shuffled'); } }),
+      el('button', { class: 'btn small', text: 'Shuffle', onClick: () => { ctx.dispatch({ type: 'shuffle', zone: 'deck' }); toast('Deck shuffled'); } }),
       el('button', {
-        class: 'btn small', text: '🔍 Search', title: 'Look through your own deck',
+        class: 'btn small', text: 'Search', title: 'Look through your own deck',
         onClick: () => openModal('zone', { playerId: seat.playerId, zone: 'deck' }),
       }),
     );
