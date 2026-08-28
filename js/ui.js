@@ -230,6 +230,7 @@ export function cardEl(state, ctx, cardId, opts = {}) {
       hidePeek();
     });
     node.addEventListener('dragend', () => node.classList.remove('dragging'));
+    enableTouchDrag(node, ctx, () => cardId);
     if (size !== 'big') {
       node.addEventListener('mouseenter', () => showPeek(state, ctx, cardId));
       node.addEventListener('mouseleave', hidePeek);
@@ -269,6 +270,8 @@ export function hidePeek() {
 // ---------- drag & drop ----------
 
 export function makeDropTarget(node, ctx, boardId, zone) {
+  // Tagged for the touch-drag hit test as well as HTML5 DnD.
+  node._drop = { boardId, zone };
   node.addEventListener('dragover', (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -284,6 +287,127 @@ export function makeDropTarget(node, ctx, boardId, zone) {
     ctx.dispatch({ type: 'moveCard', cardId, to: { boardId, zone, pos: zone === 'deck' ? 'top' : undefined } });
   });
   return node;
+}
+
+// ---------- touch drag ----------
+// HTML5 drag-and-drop doesn't exist on touch browsers, so touches get their
+// own gesture: HOLD a card briefly to pick it up (a quick swipe still
+// scrolls), drag the floating ghost, release over any zone to drop it.
+
+const HOLD_MS = 220;        // long-press before the card lifts
+const SCROLL_SLOP = 12;     // movement before the hold that means "scrolling"
+const MIN_DROP_DIST = 15;   // movement required for the release to count as a drop
+
+let touchDragActive = false;
+let swallowClicksUntil = 0;
+
+// A drag's release also fires a click on some browsers — swallow it.
+document.addEventListener('click', (e) => {
+  if (Date.now() < swallowClicksUntil) {
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}, true);
+
+function dropTargetAt(x, y) {
+  for (const el of document.elementsFromPoint(x, y)) {
+    if (el._drop) return el;
+  }
+  return null;
+}
+
+function clearDropHints() {
+  for (const n of document.querySelectorAll('.drop-hint')) n.classList.remove('drop-hint');
+}
+
+function enableTouchDrag(node, ctx, getCardId) {
+  node.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return; // desktop keeps HTML5 DnD
+    const cardId = getCardId();
+    if (!cardId || touchDragActive) return;
+
+    const startX = e.clientX, startY = e.clientY;
+    let lastX = startX, lastY = startY;
+    let dragging = false;
+    let ghost = null;
+    let grabDX = 0, grabDY = 0;
+
+    const lift = () => {
+      dragging = true;
+      touchDragActive = true;
+      hidePeek();
+      hideKwTip();
+      const r = node.getBoundingClientRect();
+      grabDX = lastX - r.left;
+      grabDY = lastY - r.top;
+      ghost = node.cloneNode(true);
+      ghost.classList.add('touch-ghost');
+      Object.assign(ghost.style, {
+        position: 'fixed',
+        left: (lastX - grabDX) + 'px',
+        top: (lastY - grabDY) + 'px',
+        width: r.width + 'px',
+        height: r.height + 'px',
+        margin: '0',
+      });
+      document.body.append(ghost);
+      node.classList.add('dragging');
+    };
+    const holdTimer = setTimeout(lift, HOLD_MS);
+
+    const cleanup = () => {
+      clearTimeout(holdTimer);
+      node.removeEventListener('pointermove', onMove);
+      node.removeEventListener('pointerup', onUp);
+      node.removeEventListener('pointercancel', onCancel);
+      document.removeEventListener('touchmove', onTouchMove);
+      if (ghost) ghost.remove();
+      node.classList.remove('dragging');
+      clearDropHints();
+      if (dragging) {
+        touchDragActive = false;
+        swallowClicksUntil = Date.now() + 400;
+      }
+    };
+
+    const onMove = (ev) => {
+      lastX = ev.clientX;
+      lastY = ev.clientY;
+      if (!dragging) {
+        // Moving before the hold completes is a scroll, not a drag.
+        if (Math.hypot(lastX - startX, lastY - startY) > SCROLL_SLOP) cleanup();
+        return;
+      }
+      ghost.style.left = (lastX - grabDX) + 'px';
+      ghost.style.top = (lastY - grabDY) + 'px';
+      const target = dropTargetAt(lastX, lastY);
+      clearDropHints();
+      if (target) target.classList.add('drop-hint');
+    };
+
+    // Once the card is lifted, the page must not scroll under the drag.
+    const onTouchMove = (ev) => {
+      if (dragging) ev.preventDefault();
+    };
+
+    const onUp = () => {
+      if (dragging && Math.hypot(lastX - startX, lastY - startY) >= MIN_DROP_DIST) {
+        const target = dropTargetAt(lastX, lastY);
+        if (target) {
+          const { boardId, zone } = target._drop;
+          ctx.dispatch({ type: 'moveCard', cardId, to: { boardId, zone, pos: zone === 'deck' ? 'top' : undefined } });
+        }
+      }
+      cleanup();
+    };
+    const onCancel = () => cleanup();
+
+    node.addEventListener('pointermove', onMove);
+    node.addEventListener('pointerup', onUp);
+    node.addEventListener('pointercancel', onCancel);
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    try { node.setPointerCapture(e.pointerId); } catch {}
+  });
 }
 
 // ---------- FLIP animations: cards physically slide across the felt ----------
@@ -723,6 +847,8 @@ function deckPileEl(state, ctx, board, isMe) {
       e.dataTransfer.effectAllowed = 'move';
     },
   }, stack, el('div', { class: 'pile-count', text: String(count) }), el('div', { class: 'pile-tag', text: 'Pool' }));
+  // Touch: hold the pile to pick up its top card, drag it anywhere to draw it there.
+  enableTouchDrag(pile, ctx, () => board.zones.deck[0]);
   return makeDropTarget(pile, ctx, board.boardId, 'deck');
 }
 

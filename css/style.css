@@ -171,6 +171,8 @@ input::placeholder { color: var(--faint); }
   display: flex;
   cursor: grab;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none; /* no iOS callout on the long-press that lifts a card */
   flex-shrink: 0;
   box-shadow:
     0 0 0 1px rgba(70, 50, 20, .10),
@@ -504,6 +506,19 @@ input::placeholder { color: var(--faint); }
   cursor: pointer;
   min-width: 84px; min-height: 118px;
   padding-bottom: 16px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* The floating card that follows the finger during a touch drag. */
+.touch-ghost {
+  z-index: 200;
+  pointer-events: none;
+  opacity: .95;
+  transform: scale(1.07) rotate(2deg);
+  box-shadow: 0 0 0 1px rgba(70,50,20,.12), 0 16px 40px rgba(28,27,24,.35);
+  transition: none;
 }
 .pile-stack { position: relative; width: 84px; aspect-ratio: 5 / 7; }
 .seat:not(.me) .pile-stack, .seat:not(.me) .card-back { --cw: 76px; width: 76px; }
