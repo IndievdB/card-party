@@ -3,7 +3,7 @@
 import { store, getIdentity, saveIdentity } from './store.js';
 import { newState, addPlayer, getPlayer, migrateState, cleanName, sanitizeLoadedState, normalizeCategory, ownedTitles } from './game.js';
 import { HostSession, ClientSession, randomCode, normalizeCode, peerAvailable } from './net.js';
-import { renderGame, refreshModal, openModal, closeModal, toast, el, setKeywordDefs } from './ui.js';
+import { renderGame, refreshModal, openModal, closeModal, toast, el, setKeywordDefs, uiPrompt, uiConfirm, uiAlert } from './ui.js';
 import { loadLibrary } from './sheet.js';
 import { configureBuilder, poolToolsNode } from './builder.js';
 
@@ -88,7 +88,7 @@ function gameCtx() {
       const hosting = session?.role === 'host';
       let name;
       if (hosting) {
-        name = prompt('Name for the new board:', 'Board ' + ((latestState?.boards.length || 0) + 1));
+        name = await uiPrompt('Name for the new board', 'Board ' + ((latestState?.boards.length || 0) + 1), 'Add board');
         if (name == null || !name.trim()) return;
       }
       await libraryReady;
@@ -107,10 +107,10 @@ function gameCtx() {
         if (!res.ok) toast(res.reason, 'warn');
       }
     },
-    renameSelf: () => {
+    renameSelf: async () => {
       const identity = getIdentity();
-      const name = prompt('Your name:', identity.name);
-      if (name == null) return;
+      const name = await uiPrompt('Your name', identity.name, 'Rename');
+      if (name == null || !name.trim()) return;
       const clean = cleanName(name);
       identity.name = clean;
       saveIdentity(identity);
@@ -284,7 +284,7 @@ function joinGame(codeInput) {
         endSession();
         store.del(lastRoomKey());
         showView('home');
-        alert('You were removed from the room by the host.');
+        uiAlert('You were removed from the room by the host.');
       },
       onFail: (reason) => {
         endSession();
@@ -327,9 +327,10 @@ function endSession() {
   document.getElementById('conn-banner').classList.add('hidden');
 }
 
-function leaveGame() {
+async function leaveGame() {
   if (session?.role === 'host') {
-    if (!confirm('Close the room? Players will be disconnected, but you can restore this room later from the home screen.')) return;
+    const ok = await uiConfirm('Players will be disconnected, but you can restore this room later from the home screen.', { title: 'Close the room?', okText: 'Close room', danger: true });
+    if (!ok) return;
   } else {
     store.del(lastRoomKey());
   }

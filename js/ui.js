@@ -43,6 +43,8 @@ export function setKeywordDefs(map) {
 export function kwEl(k) {
   const desc = KW_DEFS[String(k).toLowerCase()];
   const chip = el('span', { class: 'kw' + (desc ? ' has-def' : ''), text: k });
+  // Every tag gets its own stable color, derived from its name.
+  chip.style.setProperty('--kw', guideHue(k));
   if (desc) {
     const show = (e) => showKwTip(k, desc, e.clientX, e.clientY);
     chip.addEventListener('mouseenter', show);
@@ -100,6 +102,57 @@ export function toast(message, kind = 'info') {
     node.classList.remove('show');
     setTimeout(() => node.remove(), 400);
   }, 3800);
+}
+
+// ---------- themed dialogs (in place of native prompt/confirm/alert) ----------
+// They live in their own layer above the modal, so a modal can open one.
+
+function baseDialog({ title, message, input = false, value = '', okText = 'OK', cancelText = 'Cancel', danger = false }) {
+  return new Promise((resolve) => {
+    const root = document.getElementById('dialog-root');
+    if (!root) return resolve(input ? null : false);
+    let inputEl = null;
+    const done = (result) => {
+      root.replaceChildren();
+      document.removeEventListener('keydown', onKey, true);
+      resolve(result);
+    };
+    const submit = () => done(input ? inputEl.value : true);
+    const cancel = () => done(input ? null : false);
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); cancel(); }
+    };
+    if (input) {
+      inputEl = el('input', { value: String(value) });
+      inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+    }
+    document.addEventListener('keydown', onKey, true);
+    const overlay = el('div', { class: 'dialog-overlay', onClick: (e) => { if (e.target === overlay) cancel(); } },
+      el('div', { class: 'dialog' },
+        title ? el('h3', { text: title }) : null,
+        message ? el('p', { class: 'dialog-msg', text: message }) : null,
+        inputEl,
+        el('div', { class: 'dialog-actions' },
+          cancelText != null ? el('button', { class: 'btn dialog-cancel', text: cancelText, onClick: cancel }) : null,
+          el('button', { class: 'btn primary' + (danger ? ' danger-solid' : ''), text: okText, onClick: submit }),
+        ),
+      ),
+    );
+    root.replaceChildren(overlay);
+    if (inputEl) { inputEl.focus(); inputEl.select(); }
+  });
+}
+
+// Resolves to the entered string, or null if cancelled.
+export function uiPrompt(title, value = '', okText = 'OK') {
+  return baseDialog({ title, input: true, value, okText });
+}
+// Resolves to true/false.
+export function uiConfirm(message, { title = '', okText = 'OK', danger = false } = {}) {
+  return baseDialog({ title, message, okText, danger });
+}
+export function uiAlert(message, title = '') {
+  return baseDialog({ title, message, cancelText: null });
 }
 
 // ---------- modals ----------
@@ -211,7 +264,7 @@ export function cardEl(state, ctx, cardId, opts = {}) {
       [0, 1].map((i) => ups[i].text
         ? el('div', { class: 'up-line' + (card.upgrade === i ? ' sel' : '') },
             el('span', { class: 'up-star', text: '★' + ups[i].name }),
-            el('span', { text: ups[i].text }))
+            el('span', { class: 'up-text', text: ups[i].text }))
         : null)));
   }
   // The category is printed at the foot of every card.
@@ -598,7 +651,7 @@ function zoneModalBody(state, ctx, board, zone, params) {
       zone === 'deck' ? el('span', { class: 'zone-index', text: String(i + 1) }) : null,
       el('div', { class: 'zone-row-info' },
         el('span', { class: 'zone-row-title', text: card.title }),
-        card.keywords.length ? el('span', { class: 'card-keywords' }, card.keywords.map((k) => el('span', { class: 'kw', text: k }))) : null,
+        card.keywords.length ? el('span', { class: 'card-keywords' }, card.keywords.map(kwEl)) : null,
       ),
       el('div', { class: 'zone-row-actions' },
         el('button', { class: 'btn small', text: 'View', onClick: () => openModal('card', { cardId }) }),
@@ -628,14 +681,16 @@ function adminModalBody(state, ctx) {
       el('span', { class: 'admin-name', text: player.name + status }),
       el('button', {
         class: 'btn small', text: 'Rename',
-        onClick: () => {
-          const name = prompt(`New name for ${player.name}:`, player.name);
+        onClick: async () => {
+          const name = await uiPrompt(`New name for ${player.name}`, player.name, 'Rename');
           if (name != null && name.trim()) ctx.dispatch({ type: 'rename', playerId: player.playerId, name });
         },
       }),
       el('button', {
         class: 'btn small danger', text: 'Kick',
-        onClick: () => { if (confirm(`Kick ${player.name}? Their board and cards stay on the table; they can rejoin any time.`)) ctx.kick(player.playerId); },
+        onClick: async () => {
+          if (await uiConfirm(`Their board and cards stay on the table; they can rejoin any time.`, { title: `Kick ${player.name}?`, okText: 'Kick', danger: true })) ctx.kick(player.playerId);
+        },
       }),
     ));
   }
@@ -654,15 +709,15 @@ function adminModalBody(state, ctx) {
       el('span', { class: 'admin-name', text: `${board.name} · ${status}` }),
       el('button', {
         class: 'btn small', text: 'Rename',
-        onClick: () => {
-          const name = prompt(`New name for the board “${board.name}”:`, board.name);
+        onClick: async () => {
+          const name = await uiPrompt(`New name for the board “${board.name}”`, board.name, 'Rename');
           if (name != null && name.trim()) ctx.dispatch({ type: 'renameBoard', boardId: board.boardId, name });
         },
       }),
       board.boardId !== ctx.myBoardId ? el('button', {
         class: 'btn small danger', text: 'Remove board',
-        onClick: () => {
-          if (confirm(`Remove ${board.name}’s board? Its cards leave the table for good.`)) {
+        onClick: async () => {
+          if (await uiConfirm('Its cards leave the table for good.', { title: `Remove ${board.name}’s board?`, okText: 'Remove board', danger: true })) {
             ctx.dispatch({ type: 'removeBoard', boardId: board.boardId });
           }
         },
@@ -674,8 +729,8 @@ function adminModalBody(state, ctx) {
   wrap.append(el('button', {
     class: 'btn', id: 'admin-add-board', text: 'Add an open board',
     title: 'Add a board nobody is playing yet — anyone can take it with “Play this board”',
-    onClick: () => {
-      const name = prompt('Name for the new board:', 'Board ' + (state.boards.length + 1));
+    onClick: async () => {
+      const name = await uiPrompt('Name for the new board', 'Board ' + (state.boards.length + 1), 'Add board');
       if (name != null && name.trim()) ctx.addBoard?.(name);
     },
   }));
@@ -688,8 +743,8 @@ function adminModalBody(state, ctx) {
   }), ' ');
   wrap.append(el('button', {
     class: 'btn warn', text: 'Return all cards to their owners’ pools',
-    onClick: () => {
-      if (confirm('Return every card to its original owner’s pool and shuffle?')) {
+    onClick: async () => {
+      if (await uiConfirm('Every card goes back to its owner board’s pool, shuffled.', { title: 'Return all cards?', okText: 'Return all' })) {
         ctx.dispatch({ type: 'returnAll' });
         toast('All cards returned home');
       }
@@ -700,11 +755,11 @@ function adminModalBody(state, ctx) {
   wrap.append(el('h4', { text: 'Save & load' }));
   const fileInput = el('input', { type: 'file', accept: 'application/json,.json', id: 'admin-load-file' });
   fileInput.style.display = 'none';
-  fileInput.addEventListener('change', () => {
+  fileInput.addEventListener('change', async () => {
     const file = fileInput.files && fileInput.files[0];
     fileInput.value = '';
     if (!file) return;
-    if (confirm('Load this save? It replaces the whole game — every board, player, card, and zone — with the saved one.')) {
+    if (await uiConfirm('It replaces the whole game — every board, player, card, and zone — with the saved one.', { title: 'Load this save?', okText: 'Load' })) {
       ctx.loadGame?.(file);
     }
   });
@@ -890,8 +945,8 @@ function boardStatsEl(state, ctx, board) {
     el('button', {
       class: 'energy-val', text: String(board.energy),
       title: 'Set an exact energy value',
-      onClick: () => {
-        const v = prompt(`Energy for ${board.name}:`, String(board.energy));
+      onClick: async () => {
+        const v = await uiPrompt(`Energy for ${board.name}`, String(board.energy), 'Set');
         if (v == null || !v.trim()) return;
         const n = Math.round(Number(v));
         if (Number.isFinite(n)) setEnergy(n);
@@ -949,8 +1004,8 @@ function seatPanel(state, ctx, board, isMe) {
     player && player.playerId === state.hostPlayerId ? el('span', { class: 'badge', text: 'HOST' }) : null,
     (isMe || ctx.isHost) ? el('button', {
       class: 'btn small rename-board', text: '✎', title: 'Rename this board',
-      onClick: () => {
-        const name = prompt('Board name:', board.name);
+      onClick: async () => {
+        const name = await uiPrompt('Board name', board.name, 'Rename');
         if (name != null && name.trim()) ctx.dispatch({ type: 'renameBoard', boardId: board.boardId, name });
       },
     }) : null,

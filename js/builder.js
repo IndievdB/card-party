@@ -290,7 +290,7 @@ function defCard(def, onPick) {
         ups.map((u, i) => u.text
           ? el('div', { class: 'up-line' },
               el('span', { class: 'up-star', text: '★' + (u.sticker || (i === 0 ? 'A' : 'B')) }),
-              el('span', { text: u.text }))
+              el('span', { class: 'up-text', text: u.text }))
           : null));
     })(),
   );
