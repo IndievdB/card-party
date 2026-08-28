@@ -7,7 +7,7 @@
 // zones. The host also persists room state, so a host who closes the tab can
 // restore the room under the same code.
 
-import { applyAction, addSeat, getSeat, makeCardInstances, shuffle, cleanName, MAX_PLAYERS } from './game.js';
+import { applyAction, addPlayer, addBoard, getPlayer, makeCardInstances, shuffle, cleanName, MAX_PLAYERS, MAX_BOARDS } from './game.js';
 import { store } from './store.js';
 
 const PEER_PREFIX = 'card-party-v1-';
@@ -52,7 +52,7 @@ export class HostSession {
     this.state = state;
     this.onChange = onChange; // (state) => void — persist + render
     this.onPeerError = onPeerError || (() => {});
-    this.getStarterDeck = getStarterDeck || (() => []); // Base cards for new seats
+    this.getStarterDeck = getStarterDeck || (() => []); // Base cards for new boards
     this.conns = new Map(); // playerId -> DataConnection
     this.peer = null;
     this.destroyed = false;
@@ -103,11 +103,11 @@ export class HostSession {
     if (msg.t === 'hello') return this._hello(conn, msg);
     const playerId = conn._playerId;
     if (!playerId) return;
-    const seat = getSeat(this.state, playerId);
-    if (seat) {
-      seat.lastSeen = Date.now();
-      if (!seat.connected) {
-        seat.connected = true;
+    const player = getPlayer(this.state, playerId);
+    if (player) {
+      player.lastSeen = Date.now();
+      if (!player.connected) {
+        player.connected = true;
         this._changed();
       }
     }
@@ -125,21 +125,36 @@ export class HostSession {
     const name = cleanName(msg.name);
     if (!playerId) return conn.close();
 
-    let seat = getSeat(this.state, playerId);
-    if (!seat) {
-      if (this.state.seats.length >= MAX_PLAYERS) {
+    let player = getPlayer(this.state, playerId);
+    if (!player) {
+      if (this.state.players.length >= MAX_PLAYERS) {
         this._send(conn, { t: 'denied', fatal: true, reason: `Room is full (${MAX_PLAYERS} players max).` });
         setTimeout(() => { try { conn.close(); } catch {} }, 300);
         return;
       }
-      seat = addSeat(this.state, { playerId, name });
-      // Every new player starts with the Base cards in their pool.
-      seat.zones.deck = shuffle(makeCardInstances(this.state, seat, this.getStarterDeck()));
+      player = addPlayer(this.state, { playerId, name });
+      // A board they created earlier (left behind on a kick or a loaded
+      // save) that nobody is playing goes back to them. Otherwise a new
+      // player gets a fresh board seeded with the Base cards — unless they
+      // asked to spectate (no board; they can claim one any time).
+      const orphan = this.state.boards.find((b) =>
+        b.createdBy === playerId && !this.state.players.some((p) => p.boardId === b.boardId));
+      if (orphan) {
+        player.boardId = orphan.boardId;
+      } else if (!msg.spectator) {
+        if (this.state.boards.length < MAX_BOARDS) {
+          const board = addBoard(this.state, { name: player.name, createdBy: playerId });
+          board.zones.deck = shuffle(makeCardInstances(this.state, board, this.getStarterDeck()));
+          player.boardId = board.boardId;
+        } else {
+          this._send(conn, { t: 'denied', reason: `All ${MAX_BOARDS} boards are in use — you joined as a spectator.` });
+        }
+      }
     }
-    // On reconnection the seat keeps its current name (which may have been
-    // set by the host) — the in-game rename action is how names change.
-    seat.connected = true;
-    seat.lastSeen = Date.now();
+    // On reconnection the player keeps their current name (which may have
+    // been set by the host) and their board, if nobody claimed it.
+    player.connected = true;
+    player.lastSeen = Date.now();
 
     const old = this.conns.get(playerId);
     if (old && old !== conn) {
@@ -157,9 +172,9 @@ export class HostSession {
     if (!playerId) return;
     if (this.conns.get(playerId) === conn) {
       this.conns.delete(playerId);
-      const seat = getSeat(this.state, playerId);
-      if (seat && seat.connected) {
-        seat.connected = false;
+      const player = getPlayer(this.state, playerId);
+      if (player && player.connected) {
+        player.connected = false;
         this._changed();
       }
     }
@@ -168,14 +183,14 @@ export class HostSession {
   _checkStale() {
     let dirty = false;
     const now = Date.now();
-    for (const seat of this.state.seats) {
-      if (seat.playerId === this.state.hostPlayerId) continue;
-      if (seat.connected && now - (seat.lastSeen || 0) > STALE_MS) {
-        seat.connected = false;
+    for (const player of this.state.players) {
+      if (player.playerId === this.state.hostPlayerId) continue;
+      if (player.connected && now - (player.lastSeen || 0) > STALE_MS) {
+        player.connected = false;
         dirty = true;
-        const conn = this.conns.get(seat.playerId);
+        const conn = this.conns.get(player.playerId);
         try { conn && conn.close(); } catch {}
-        this.conns.delete(seat.playerId);
+        this.conns.delete(player.playerId);
       }
     }
     if (dirty) this._changed();
@@ -201,39 +216,39 @@ export class HostSession {
     return res;
   }
 
-  // Replace the whole board with a saved state (already sanitized). The room
-  // code stays this room's; the loading host takes over the saved host seat
-  // if identities differ; connected players keep or regain their seats.
+  // Replace the whole table with a saved state (already sanitized). Every
+  // saved board comes back, possessed or not. The room code stays this
+  // room's; the loading host takes over the saved host's player row (and
+  // thereby their board) if identities differ. Players connected right now
+  // who aren't in the save become spectators — they claim a board from the
+  // table rather than being dealt a fresh one.
   loadState(loaded) {
     const myId = this.state.hostPlayerId;
-    const myName = getSeat(this.state, myId)?.name;
+    const myName = getPlayer(this.state, myId)?.name;
     loaded.roomCode = this.state.roomCode;
 
-    if (!loaded.seats.some((s) => s.playerId === myId)) {
-      // Take over the saved host's seat (or the first seat) and its cards.
-      const hostSeat = loaded.seats.find((s) => s.playerId === loaded.hostPlayerId) || loaded.seats[0];
-      const oldId = hostSeat.playerId;
-      hostSeat.playerId = myId;
-      if (myName) hostSeat.name = myName;
-      for (const card of Object.values(loaded.cards)) {
-        if (card.ownerId === oldId) {
-          card.ownerId = myId;
-          if (myName) card.ownerName = myName;
-        }
+    let mine = getPlayer(loaded, myId);
+    if (!mine) {
+      const savedHost = getPlayer(loaded, loaded.hostPlayerId);
+      if (savedHost) {
+        savedHost.playerId = myId;
+        if (myName) savedHost.name = myName;
+        mine = savedHost;
+      } else {
+        mine = addPlayer(loaded, { playerId: myId, name: myName || 'Host' });
       }
     }
     loaded.hostPlayerId = myId;
 
-    // Players connected right now who aren't in the save keep a (fresh) seat.
     for (const pid of this.conns.keys()) {
-      if (!loaded.seats.some((s) => s.playerId === pid) && loaded.seats.length < MAX_PLAYERS) {
-        const current = getSeat(this.state, pid);
-        addSeat(loaded, { playerId: pid, name: current ? current.name : 'Player' });
+      if (!getPlayer(loaded, pid) && loaded.players.length < MAX_PLAYERS) {
+        const current = getPlayer(this.state, pid);
+        addPlayer(loaded, { playerId: pid, name: current ? current.name : 'Player' });
       }
     }
-    for (const seat of loaded.seats) {
-      seat.connected = seat.playerId === myId || this.conns.has(seat.playerId);
-      seat.lastSeen = Date.now();
+    for (const player of loaded.players) {
+      player.connected = player.playerId === myId || this.conns.has(player.playerId);
+      player.lastSeen = Date.now();
     }
 
     this.state = loaded;
@@ -264,10 +279,10 @@ export class HostSession {
 }
 
 export class ClientSession {
-  constructor({ code, identity, deck, handlers }) {
+  constructor({ code, identity, spectator = false, handlers }) {
     this.code = code;
     this.identity = identity;
-    this.deck = deck || [];
+    this.spectator = !!spectator; // join without a board
     this.h = handlers; // { onState, onStatus, onDenied, onKicked, onFail }
     this.peer = null;
     this.conn = null;
@@ -311,7 +326,7 @@ export class ClientSession {
         clearTimeout(this._connectTimer);
         this.lastSeen = Date.now();
         try {
-          conn.send({ t: 'hello', playerId: this.identity.playerId, name: this.identity.name, deck: this.deck });
+          conn.send({ t: 'hello', playerId: this.identity.playerId, name: this.identity.name, spectator: this.spectator });
         } catch {}
       });
       conn.on('data', (msg) => { if (live()) this._onMessage(msg); });
@@ -396,10 +411,6 @@ export class ClientSession {
       } catch {}
     }
     return { ok: false, reason: 'Not connected — hold on, reconnecting…' };
-  }
-
-  setDeck(deck) {
-    this.deck = deck || [];
   }
 
   _cleanupPeer() {

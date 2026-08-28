@@ -5,7 +5,7 @@
 // piles, hands fan out, placed cards sit at slightly crooked angles, and a
 // FLIP pass animates every card sliding across the felt between re-renders.
 
-import { ZONES, ZONE_LABELS, getSeat, findCard, normalizeUpgrade, normalizeCategory, categoryLabel, guideHue } from './game.js';
+import { ZONES, ZONE_LABELS, getPlayer, getBoard, playerOn, findCard, normalizeUpgrade, normalizeCategory, categoryLabel, guideHue } from './game.js';
 
 // Upgrade display names come from the sheet's sticker columns: a "Hamburger"
 // sticker makes it the Hamburger upgrade. Fall back to A/B when unstickered.
@@ -139,10 +139,10 @@ function renderModal() {
     title = card.title;
     body = cardModalBody(modalCtx.state, modalCtx.ctx, card);
   } else if (kind === 'zone') {
-    const seat = getSeat(modalCtx.state, params.playerId);
-    if (!seat) return closeModal();
-    title = `${seat.name} — ${ZONE_LABELS[params.zone]} (${seat.zones[params.zone].length})`;
-    body = zoneModalBody(modalCtx.state, modalCtx.ctx, seat, params.zone);
+    const board = getBoard(modalCtx.state, params.boardId);
+    if (!board) return closeModal();
+    title = `${board.name} — ${ZONE_LABELS[params.zone]} (${board.zones[params.zone].length})`;
+    body = zoneModalBody(modalCtx.state, modalCtx.ctx, board, params.zone);
   } else if (kind === 'admin') {
     title = 'Host admin';
     body = adminModalBody(modalCtx.state, modalCtx.ctx);
@@ -165,7 +165,7 @@ function renderModal() {
 // ---------- shared card rendering ----------
 
 export function ownerColor(state, ownerId) {
-  const i = state.seats.findIndex((s) => s.playerId === ownerId);
+  const i = state.boards.findIndex((b) => b.boardId === ownerId);
   return `var(--seat-${(i >= 0 ? i : 0) % 10})`;
 }
 
@@ -268,7 +268,7 @@ export function hidePeek() {
 
 // ---------- drag & drop ----------
 
-export function makeDropTarget(node, ctx, playerId, zone) {
+export function makeDropTarget(node, ctx, boardId, zone) {
   node.addEventListener('dragover', (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -281,7 +281,7 @@ export function makeDropTarget(node, ctx, playerId, zone) {
     node.classList.remove('drop-hint');
     const cardId = e.dataTransfer.getData('text/plain');
     if (!cardId) return;
-    ctx.dispatch({ type: 'moveCard', cardId, to: { playerId, zone, pos: zone === 'deck' ? 'top' : undefined } });
+    ctx.dispatch({ type: 'moveCard', cardId, to: { boardId, zone, pos: zone === 'deck' ? 'top' : undefined } });
   });
   return node;
 }
@@ -307,7 +307,7 @@ function captureRects(root) {
 
 function locOf(state, cardId) {
   const loc = findCard(state, cardId);
-  return loc ? loc.seat.playerId + ':' + loc.zone : null;
+  return loc ? loc.board.boardId + ':' + loc.zone : null;
 }
 
 function playAnimations(root, state) {
@@ -382,9 +382,9 @@ function playAnimations(root, state) {
   }
 
   flip.locs.clear();
-  for (const seat of state.seats) {
+  for (const board of state.boards) {
     for (const zone of ZONES) {
-      for (const id of seat.zones[zone]) flip.locs.set(id, seat.playerId + ':' + zone);
+      for (const id of board.zones[zone]) flip.locs.set(id, board.boardId + ':' + zone);
     }
   }
 }
@@ -398,7 +398,7 @@ function cardModalBody(state, ctx, card) {
   wrap.append(el('div', { class: 'detail-card-wrap' }, cardEl(state, ctx, card.id, { size: 'big', inert: true })));
   wrap.append(el('p', { class: 'detail-meta' },
     `Owned by ${card.ownerName}`,
-    loc ? ` · currently in ${loc.seat.name}’s ${ZONE_LABELS[loc.zone].toLowerCase()}` : '',
+    loc ? ` · currently in ${loc.board.name}’s ${ZONE_LABELS[loc.zone].toLowerCase()}` : '',
   ));
 
   // Upgrade options — exactly one may be selected (or none). Named by sticker.
@@ -424,13 +424,13 @@ function cardModalBody(state, ctx, card) {
   }
   wrap.append(upgradeBox);
 
-  // Quick moves + precise mover.
-  const quick = el('div', { class: 'quick-moves' },
-    quickBtn('My hand', { playerId: ctx.myId, zone: 'hand' }),
-    quickBtn('My Delayed', { playerId: ctx.myId, zone: 'delayed' }),
-    quickBtn('My discard', { playerId: ctx.myId, zone: 'discard' }),
-    quickBtn('Top of my pool', { playerId: ctx.myId, zone: 'deck', pos: 'top' }),
-  );
+  // Quick moves (need a board of your own) + precise mover.
+  const quick = ctx.myBoardId ? el('div', { class: 'quick-moves' },
+    quickBtn('My hand', { boardId: ctx.myBoardId, zone: 'hand' }),
+    quickBtn('My Delayed', { boardId: ctx.myBoardId, zone: 'delayed' }),
+    quickBtn('My discard', { boardId: ctx.myBoardId, zone: 'discard' }),
+    quickBtn('Top of my pool', { boardId: ctx.myBoardId, zone: 'deck', pos: 'top' }),
+  ) : null;
   function quickBtn(label, to) {
     return el('button', {
       class: 'btn small',
@@ -439,8 +439,8 @@ function cardModalBody(state, ctx, card) {
     });
   }
 
-  const seatSel = el('select', {}, state.seats.map((s) =>
-    el('option', { value: s.playerId, text: s.playerId === ctx.myId ? s.name + ' (you)' : s.name })));
+  const seatSel = el('select', {}, state.boards.map((b) =>
+    el('option', { value: b.boardId, text: b.boardId === ctx.myBoardId ? b.name + ' (you)' : b.name })));
   const zoneSel = el('select', {}, ZONES.map((z) => el('option', { value: z, text: ZONE_LABELS[z] })));
   const posSel = el('select', {},
     el('option', { value: 'top', text: 'Top' }),
@@ -456,37 +456,37 @@ function cardModalBody(state, ctx, card) {
       onClick: () => {
         ctx.dispatch({
           type: 'moveCard', cardId: card.id,
-          to: { playerId: seatSel.value, zone: zoneSel.value, pos: posSel.value },
+          to: { boardId: seatSel.value, zone: zoneSel.value, pos: posSel.value },
         });
         closeModal();
       },
     }),
   );
 
-  wrap.append(el('h4', { text: 'Move this card' }), quick, mover);
+  wrap.append(el('h4', { text: 'Move this card' }), ...(quick ? [quick] : []), mover);
   return wrap;
 }
 
 // ---------- zone modal (browse any pile — everything is public) ----------
 
-function zoneModalBody(state, ctx, seat, zone) {
+function zoneModalBody(state, ctx, board, zone) {
   const wrap = el('div', { class: 'zone-browser' });
-  // A pool doubles as the deck builder: your own always, and every pool for
-  // the host, who can edit other players' decks like their own. Added cards
-  // belong to the pool's owner.
-  if (zone === 'deck' && (seat.playerId === ctx.myId || ctx.isHost) && ctx.poolTools) {
-    wrap.append(ctx.poolTools(seat.playerId), el('hr', { class: 'pool-divider' }));
+  // A pool doubles as the deck builder: your own board's always, and every
+  // pool for the host, who can edit any board like their own. Added cards
+  // belong to the pool's board.
+  if (zone === 'deck' && (board.boardId === ctx.myBoardId || ctx.isHost) && ctx.poolTools) {
+    wrap.append(ctx.poolTools(board.boardId), el('hr', { class: 'pool-divider' }));
   }
   if (zone === 'deck') {
     wrap.append(el('div', { class: 'zone-note' },
       el('span', { text: 'Top card first. ' }),
       el('button', {
         class: 'btn small', text: 'Shuffle',
-        onClick: () => { ctx.dispatch({ type: 'shuffle', playerId: seat.playerId, zone: 'deck' }); toast('Pool shuffled'); },
+        onClick: () => { ctx.dispatch({ type: 'shuffle', boardId: board.boardId, zone: 'deck' }); toast('Pool shuffled'); },
       }),
     ));
   }
-  const ids = seat.zones[zone];
+  const ids = board.zones[zone];
   if (!ids.length) wrap.append(el('p', { class: 'empty', text: 'Empty.' }));
   ids.forEach((cardId, i) => {
     const card = state.cards[cardId];
@@ -499,10 +499,10 @@ function zoneModalBody(state, ctx, seat, zone) {
       ),
       el('div', { class: 'zone-row-actions' },
         el('button', { class: 'btn small', text: 'View', onClick: () => openModal('card', { cardId }) }),
-        el('button', {
+        ctx.myBoardId ? el('button', {
           class: 'btn small', text: '→ my hand',
-          onClick: () => ctx.dispatch({ type: 'moveCard', cardId, to: { playerId: ctx.myId, zone: 'hand' } }),
-        }),
+          onClick: () => ctx.dispatch({ type: 'moveCard', cardId, to: { boardId: ctx.myBoardId, zone: 'hand' } }),
+        }) : null,
       ),
     );
     row.style.setProperty('--owner', ownerColor(state, card.ownerId));
@@ -517,25 +517,48 @@ function adminModalBody(state, ctx) {
   const wrap = el('div', { class: 'admin' });
 
   wrap.append(el('h4', { text: 'Players' }));
-  for (const seat of state.seats) {
-    if (seat.playerId === state.hostPlayerId) continue;
+  for (const player of state.players) {
+    if (player.playerId === state.hostPlayerId) continue;
+    const status = !player.connected ? ' (disconnected)' : (player.boardId ? '' : ' (spectating)');
     wrap.append(el('div', { class: 'admin-row' },
-      el('span', { class: 'dot ' + (seat.connected ? 'on' : 'off') }),
-      el('span', { class: 'admin-name', text: seat.name + (seat.connected ? '' : ' (disconnected)') }),
+      el('span', { class: 'dot ' + (player.connected ? 'on' : 'off') }),
+      el('span', { class: 'admin-name', text: player.name + status }),
       el('button', {
         class: 'btn small', text: 'Rename',
         onClick: () => {
-          const name = prompt(`New name for ${seat.name}:`, seat.name);
-          if (name != null && name.trim()) ctx.dispatch({ type: 'rename', playerId: seat.playerId, name });
+          const name = prompt(`New name for ${player.name}:`, player.name);
+          if (name != null && name.trim()) ctx.dispatch({ type: 'rename', playerId: player.playerId, name });
         },
       }),
       el('button', {
         class: 'btn small danger', text: 'Kick',
-        onClick: () => { if (confirm(`Kick ${seat.name}? Their cards leave the table; they can rejoin any time.`)) ctx.kick(seat.playerId); },
+        onClick: () => { if (confirm(`Kick ${player.name}? Their board and cards stay on the table; they can rejoin any time.`)) ctx.kick(player.playerId); },
       }),
     ));
   }
-  if (state.seats.length <= 1) wrap.append(el('p', { class: 'empty', text: 'No other players yet.' }));
+  if (state.players.length <= 1) wrap.append(el('p', { class: 'empty', text: 'No other players yet.' }));
+
+  // Boards are independent of players — they stay when a player leaves.
+  // Removing one takes its cards off the table for good.
+  wrap.append(el('h4', { text: 'Boards' }));
+  for (const board of state.boards) {
+    const player = playerOn(state, board.boardId);
+    const status = player
+      ? (player.connected ? `played by ${player.name}` : `${player.name} — away`)
+      : 'open';
+    wrap.append(el('div', { class: 'admin-row' },
+      el('span', { class: 'dot ' + (player?.connected ? 'on' : 'off') }),
+      el('span', { class: 'admin-name', text: `${board.name} · ${status}` }),
+      board.boardId !== ctx.myBoardId ? el('button', {
+        class: 'btn small danger', text: 'Remove board',
+        onClick: () => {
+          if (confirm(`Remove ${board.name}’s board? Its cards leave the table for good.`)) {
+            ctx.dispatch({ type: 'removeBoard', boardId: board.boardId });
+          }
+        },
+      }) : null,
+    ));
+  }
 
   wrap.append(el('h4', { text: 'Table' }));
   wrap.append(el('button', {
@@ -590,8 +613,10 @@ export function renderGame(root, state, ctx) {
   hideKwTip();
   root.replaceChildren();
 
-  const me = getSeat(state, ctx.myId);
-  const others = state.seats.filter((s) => s.playerId !== ctx.myId);
+  const me = getPlayer(state, ctx.myId);
+  const myBoard = me?.boardId ? getBoard(state, me.boardId) : null;
+  const otherBoards = state.boards.filter((b) => b !== myBoard);
+  const watchers = state.players.filter((p) => p.connected && !p.boardId);
 
   // Top bar
   // Invite link: https://<site>/<room code> — the 404 redirect turns it back
@@ -607,7 +632,11 @@ export function renderGame(root, state, ctx) {
         onClick: () => { navigator.clipboard?.writeText(inviteLink()).then(() => toast('Invite link copied')); },
       }, 'Room ', el('strong', { text: state.roomCode }), ' ⧉'),
       el('span', { class: 'pill ' + ctx.status, text: statusLabel(ctx) }),
-      el('span', { class: 'pill', text: `${state.seats.length}/10 players` }),
+      el('span', { class: 'pill', text: `${state.players.length}/10 players` }),
+      watchers.length ? el('span', {
+        class: 'pill', text: `${watchers.length} watching`,
+        title: watchers.map((p) => p.name).join(', '),
+      }) : null,
     ),
     el('div', { class: 'game-actions' },
       el('button', { class: 'btn small', text: (me ? me.name : 'Name'), title: 'Rename yourself', onClick: ctx.renameSelf }),
@@ -618,9 +647,17 @@ export function renderGame(root, state, ctx) {
 
   const table = el('div', { class: 'table' });
   const grid = el('div', { class: 'others-grid' });
-  for (const seat of others) grid.append(seatPanel(state, ctx, seat, false));
+  for (const board of otherBoards) grid.append(seatPanel(state, ctx, board, false));
   table.append(grid);
-  if (me) table.append(seatPanel(state, ctx, me, true));
+  if (myBoard) {
+    table.append(seatPanel(state, ctx, myBoard, true));
+  } else if (me) {
+    // Spectating: no board of your own. Claim an open one above, or start fresh.
+    table.append(el('div', { class: 'spectator-bar' },
+      el('span', { text: 'You’re watching without a board. Take over an open board above, or ' }),
+      el('button', { class: 'btn small primary', id: 'btn-new-board', text: 'Start a new board', onClick: ctx.newBoard }),
+    ));
+  }
   root.append(table);
 
   playAnimations(root, state);
@@ -632,18 +669,18 @@ function statusLabel(ctx) {
   return ctx.status === 'connected' ? 'connected' : ctx.status + '…';
 }
 
-function pileKey(seat, zone) {
-  return seat.playerId + ':' + zone;
+function pileKey(board, zone) {
+  return board.boardId + ':' + zone;
 }
 
 // The pool: a stack of owner-colored card backs, thickness tracking the count.
-function deckPileEl(state, ctx, seat, isMe) {
-  const count = seat.zones.deck.length;
+function deckPileEl(state, ctx, board, isMe) {
+  const count = board.zones.deck.length;
   const layers = Math.max(count > 0 ? 1 : 0, Math.min(4, Math.ceil(count / 6)));
   const stack = el('div', { class: 'pile-stack' });
   for (let i = 0; i < layers; i++) {
     const back = el('div', { class: 'card-back' });
-    back.style.setProperty('--owner', ownerColor(state, seat.playerId));
+    back.style.setProperty('--owner', ownerColor(state, board.boardId));
     back.style.setProperty('--stack-i', i);
     stack.append(back);
   }
@@ -651,80 +688,98 @@ function deckPileEl(state, ctx, seat, isMe) {
 
   const pile = el('div', {
     class: 'pile deck' + (isMe ? ' mine' : ''),
-    dataset: { pile: pileKey(seat, 'deck') },
+    dataset: { pile: pileKey(board, 'deck') },
     draggable: count ? 'true' : null,
     title: isMe
       ? 'Click to look through your pool and add cards to it · drag off the top card to draw it'
       : 'Click to look through the pool (pools are public) · drag off the top card to draw it',
-    onClick: () => openModal('zone', { playerId: seat.playerId, zone: 'deck' }),
+    onClick: () => openModal('zone', { boardId: board.boardId, zone: 'deck' }),
     // Dragging the pile picks up its top card — drop it anywhere to draw it there.
     onDragstart: (e) => {
-      const top = seat.zones.deck[0];
+      const top = board.zones.deck[0];
       if (!top) { e.preventDefault(); return; }
       e.dataTransfer.setData('text/plain', top);
       e.dataTransfer.effectAllowed = 'move';
     },
   }, stack, el('div', { class: 'pile-count', text: String(count) }), el('div', { class: 'pile-tag', text: 'Pool' }));
-  return makeDropTarget(pile, ctx, seat.playerId, 'deck');
+  return makeDropTarget(pile, ctx, board.boardId, 'deck');
 }
 
 // Discard: the top card lies face-up, slightly crooked, on a soft stack.
-function discardPileEl(state, ctx, seat, isMe) {
-  const ids = seat.zones.discard;
+function discardPileEl(state, ctx, board, isMe) {
+  const ids = board.zones.discard;
   const topId = ids[ids.length - 1];
   const pile = el('div', {
     class: 'pile discard' + (topId ? ' has-cards' : ''),
-    dataset: { pile: pileKey(seat, 'discard') },
+    dataset: { pile: pileKey(board, 'discard') },
     title: 'Click to browse the discard pile · drop a card to discard it here',
-    onClick: () => openModal('zone', { playerId: seat.playerId, zone: 'discard' }),
+    onClick: () => openModal('zone', { boardId: board.boardId, zone: 'discard' }),
   });
   if (topId) {
-    const card = cardEl(state, ctx, topId, { size: isMe ? 'table' : 'mini', zoneOwnerId: seat.playerId });
+    const card = cardEl(state, ctx, topId, { size: isMe ? 'table' : 'mini', zoneOwnerId: board.boardId });
     pile.append(slot(card, { rot: jitterDeg(topId, 5) }));
   } else {
     pile.append(el('div', { class: 'pile-empty-mark' }));
   }
   pile.append(el('div', { class: 'pile-count', text: String(ids.length) }), el('div', { class: 'pile-tag', text: 'Discard' }));
-  return makeDropTarget(pile, ctx, seat.playerId, 'discard');
+  return makeDropTarget(pile, ctx, board.boardId, 'discard');
 }
 
-function delayedStripEl(state, ctx, seat, isMe) {
-  const ids = seat.zones.delayed;
-  const strip = el('div', { class: 'zone-strip delayed', dataset: { pile: pileKey(seat, 'delayed') } },
+function delayedStripEl(state, ctx, board, isMe) {
+  const ids = board.zones.delayed;
+  const strip = el('div', { class: 'zone-strip delayed', dataset: { pile: pileKey(board, 'delayed') } },
     el('div', { class: 'strip-label', text: 'Delayed' }),
     el('div', { class: 'strip-cards' },
       ids.map((id) => slot(
-        cardEl(state, ctx, id, { size: isMe ? 'table' : 'mini', zoneOwnerId: seat.playerId }),
+        cardEl(state, ctx, id, { size: isMe ? 'table' : 'mini', zoneOwnerId: board.boardId }),
         { rot: jitterDeg(id) },
       )),
     ),
   );
-  return makeDropTarget(strip, ctx, seat.playerId, 'delayed');
+  return makeDropTarget(strip, ctx, board.boardId, 'delayed');
 }
 
-function handStripEl(state, ctx, seat, isMe) {
-  const ids = seat.zones.hand;
-  const strip = el('div', { class: 'zone-strip hand', dataset: { pile: pileKey(seat, 'hand') } },
+function handStripEl(state, ctx, board, isMe) {
+  const ids = board.zones.hand;
+  const strip = el('div', { class: 'zone-strip hand', dataset: { pile: pileKey(board, 'hand') } },
     el('div', { class: 'strip-label', text: 'Hand' }),
     el('div', { class: 'strip-cards' },
       // Side by side, never overlapping — just a slight hand-placed tilt.
       ids.map((id) => slot(
-        cardEl(state, ctx, id, { size: isMe ? 'hand' : 'mini', zoneOwnerId: seat.playerId }),
+        cardEl(state, ctx, id, { size: isMe ? 'hand' : 'mini', zoneOwnerId: board.boardId }),
         { rot: jitterDeg(id, 1.2) },
       )),
     ),
   );
-  return makeDropTarget(strip, ctx, seat.playerId, 'hand');
+  return makeDropTarget(strip, ctx, board.boardId, 'hand');
 }
 
-function seatPanel(state, ctx, seat, isMe) {
-  const panel = el('div', { class: 'seat' + (isMe ? ' me' : '') + (seat.connected ? '' : ' offline') });
-  panel.style.setProperty('--seat-color', ownerColor(state, seat.playerId));
+// One board on the table. The head shows the board's identity plus who is
+// playing it right now; a board with no connected player offers a
+// "Play this board" button so anyone can possess it.
+function seatPanel(state, ctx, board, isMe) {
+  const player = playerOn(state, board.boardId);
+  const online = !!player?.connected;
+  const panel = el('div', { class: 'seat' + (isMe ? ' me' : '') + (online ? '' : ' offline') });
+  panel.style.setProperty('--seat-color', ownerColor(state, board.boardId));
 
   panel.append(el('div', { class: 'seat-head' },
-    el('span', { class: 'dot ' + (seat.connected ? 'on' : 'off'), title: seat.connected ? 'Connected' : 'Disconnected' }),
-    el('span', { class: 'seat-name', text: seat.name + (isMe ? ' (you)' : '') }),
-    seat.playerId === state.hostPlayerId ? el('span', { class: 'badge', text: 'HOST' }) : null,
+    el('span', {
+      class: 'dot ' + (online ? 'on' : 'off'),
+      title: online ? 'Connected' : (player ? 'Player away' : 'No player on this board'),
+    }),
+    el('span', { class: 'seat-name', text: board.name + (isMe ? ' (you)' : '') }),
+    player && player.name !== board.name
+      ? el('span', { class: 'seat-sub', text: `played by ${player.name}` }) : null,
+    !player ? el('span', { class: 'seat-sub', text: 'open board' }) : null,
+    player && player.playerId === state.hostPlayerId ? el('span', { class: 'badge', text: 'HOST' }) : null,
+    !isMe && !online ? el('button', {
+      class: 'btn small claim-btn', text: 'Play this board',
+      title: player
+        ? `Take over while ${player.name} is away`
+        : `Possess this board and play as ${board.name}`,
+      onClick: () => ctx.dispatch({ type: 'possessBoard', boardId: board.boardId }),
+    }) : null,
   ));
 
   if (isMe) {
@@ -733,19 +788,19 @@ function seatPanel(state, ctx, seat, isMe) {
       el('button', { class: 'btn small', text: 'Shuffle', onClick: () => { ctx.dispatch({ type: 'shuffle', zone: 'deck' }); toast('Deck shuffled'); } }),
     );
     panel.append(
-      delayedStripEl(state, ctx, seat, true),
+      delayedStripEl(state, ctx, board, true),
       el('div', { class: 'my-lower' },
-        el('div', { class: 'my-piles' }, deckPileEl(state, ctx, seat, true), actions),
-        handStripEl(state, ctx, seat, true),
-        el('div', { class: 'my-piles' }, discardPileEl(state, ctx, seat, true)),
+        el('div', { class: 'my-piles' }, deckPileEl(state, ctx, board, true), actions),
+        handStripEl(state, ctx, board, true),
+        el('div', { class: 'my-piles' }, discardPileEl(state, ctx, board, true)),
       ),
     );
   } else {
     panel.append(el('div', { class: 'seat-zones' },
-      el('div', { class: 'piles' }, deckPileEl(state, ctx, seat, false), discardPileEl(state, ctx, seat, false)),
+      el('div', { class: 'piles' }, deckPileEl(state, ctx, board, false), discardPileEl(state, ctx, board, false)),
       el('div', { class: 'seat-strips' },
-        delayedStripEl(state, ctx, seat, false),
-        handStripEl(state, ctx, seat, false),
+        delayedStripEl(state, ctx, board, false),
+        handStripEl(state, ctx, board, false),
       ),
     ));
   }

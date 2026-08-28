@@ -1,7 +1,7 @@
 // App wiring: views, sessions (host/client), library loading, and the game context.
 
 import { store, getIdentity, saveIdentity } from './store.js';
-import { newState, addSeat, cleanName, sanitizeLoadedState, makeCardInstances, shuffle, normalizeCategory, ownedTitles } from './game.js';
+import { newState, addPlayer, addBoard, getPlayer, migrateState, cleanName, sanitizeLoadedState, makeCardInstances, shuffle, normalizeCategory, ownedTitles } from './game.js';
 import { HostSession, ClientSession, randomCode, normalizeCode, peerAvailable } from './net.js';
 import { renderGame, refreshModal, openModal, closeModal, toast, el, setKeywordDefs } from './ui.js';
 import { loadLibrary } from './sheet.js';
@@ -72,9 +72,13 @@ function requireName() {
 
 function gameCtx() {
   const identity = getIdentity();
+  const me = latestState ? getPlayer(latestState, identity.playerId) : null;
   return {
     myId: identity.playerId,
+    myBoardId: me?.boardId || null,
     isHost: session?.role === 'host',
+    // Spectators (or players whose board was taken) start a fresh board.
+    newBoard: () => dispatch({ type: 'newBoard', deck: baseDefs() }),
     status: session?.role === 'host' ? 'connected' : clientStatus,
     dispatch,
     kick: (playerId) => {
@@ -162,16 +166,19 @@ async function hostGame({ restore = false } = {}) {
     if (state.hostPlayerId !== identity.playerId) {
       return toast('That room was hosted by a different player in this browser.', 'warn');
     }
+    migrateState(state); // rooms saved before players/boards split
     // Everyone shows as disconnected until they reconnect.
-    for (const seat of state.seats) {
-      seat.connected = seat.playerId === identity.playerId;
+    for (const player of state.players) {
+      player.connected = player.playerId === identity.playerId;
     }
   } else {
     await libraryReady; // so the starter (Base) cards are known
     code = randomCode();
     state = newState(code);
-    const seat = addSeat(state, { playerId: identity.playerId, name: identity.name, isHost: true });
-    seat.zones.deck = shuffle(makeCardInstances(state, seat, baseDefs()));
+    const player = addPlayer(state, { playerId: identity.playerId, name: identity.name, isHost: true });
+    const board = addBoard(state, { name: identity.name, createdBy: identity.playerId });
+    board.zones.deck = shuffle(makeCardInstances(state, board, baseDefs()));
+    player.boardId = board.boardId;
   }
 
   const host = new HostSession({
@@ -222,7 +229,7 @@ async function hostGame({ restore = false } = {}) {
 
 // ---------- joining ----------
 
-function joinGame(codeInput) {
+function joinGame(codeInput, { spectator = false } = {}) {
   if (!peerAvailable()) return toast('PeerJS failed to load — check your connection and refresh.', 'warn');
   const identity = requireName();
   if (!identity) return;
@@ -233,7 +240,7 @@ function joinGame(codeInput) {
   const client = new ClientSession({
     code,
     identity,
-    deck: [],
+    spectator,
     handlers: {
       onState,
       onStatus: (status) => {
@@ -345,9 +352,10 @@ function setBusy(busy) {
 
 function init() {
   document.getElementById('btn-host').addEventListener('click', () => hostGame());
-  document.getElementById('btn-join').addEventListener('click', () => joinGame(document.getElementById('join-code').value));
+  const joinOpts = () => ({ spectator: document.getElementById('join-spectator').checked });
+  document.getElementById('btn-join').addEventListener('click', () => joinGame(document.getElementById('join-code').value, joinOpts()));
   document.getElementById('join-code').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') joinGame(e.target.value);
+    if (e.key === 'Enter') joinGame(e.target.value, joinOpts());
   });
   document.getElementById('player-name').addEventListener('change', (e) => {
     const identity = getIdentity();
@@ -363,10 +371,10 @@ function init() {
     getLibrary: () => library,
     retryLoad: loadLibraryNow,
     // Pools hold one copy of each card — the builder greys out and never
-    // offers titles the target player already owns.
-    owned: (playerId) => (latestState ? ownedTitles(latestState, playerId) : new Set()),
-    add: (defs, targetPlayerId) => {
-      dispatch({ type: 'addCards', deck: defs, playerId: targetPlayerId });
+    // offers titles the target board already owns.
+    owned: (boardId) => (latestState ? ownedTitles(latestState, boardId) : new Set()),
+    add: (defs, targetBoardId) => {
+      dispatch({ type: 'addCards', deck: defs, boardId: targetBoardId });
       toast(`Shuffled ${defs.length} card${defs.length === 1 ? '' : 's'} into the pool`);
     },
   });

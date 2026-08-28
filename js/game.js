@@ -52,42 +52,99 @@ export function categoryLabel(card) {
 }
 
 export const MAX_PLAYERS = 10;
+export const MAX_BOARDS = 10;
 export const MAX_NAME = 24;
 
+// Players and boards are separate things. A PLAYER is a connected (or
+// recently connected) person; a BOARD is a set of zones plus the cards it
+// owns. A player possesses at most one board (player.boardId); a board
+// survives its player leaving, and anyone may possess an abandoned board
+// to play as them. Spectators are players with no board.
 export function newState(roomCode) {
   return {
-    schema: 1,
+    schema: 2,
     roomCode,
     hostPlayerId: null,
-    seats: [],       // [{ playerId, name, connected, lastSeen, zones: {deck,hand,discard,delayed} }]
-    cards: {},       // instanceId -> card instance
+    players: [],     // [{ playerId, name, connected, lastSeen, boardId|null }]
+    boards: [],      // [{ boardId, name, createdBy, zones: {deck,hand,discard,delayed} }]
+    cards: {},       // instanceId -> card instance (ownerId = boardId)
     version: 0,
   };
 }
 
-export function getSeat(state, playerId) {
-  return state.seats.find((s) => s.playerId === playerId) || null;
+export function getPlayer(state, playerId) {
+  return state.players.find((p) => p.playerId === playerId) || null;
 }
 
-export function addSeat(state, { playerId, name, isHost = false }) {
-  const seat = {
+export function getBoard(state, boardId) {
+  return state.boards.find((b) => b.boardId === boardId) || null;
+}
+
+// The player currently possessing a board, if any.
+export function playerOn(state, boardId) {
+  return state.players.find((p) => p.boardId === boardId) || null;
+}
+
+// The board the player currently possesses, if any (spectators have none).
+export function boardOf(state, playerId) {
+  const p = getPlayer(state, playerId);
+  return p && p.boardId ? getBoard(state, p.boardId) : null;
+}
+
+export function addPlayer(state, { playerId, name, isHost = false }) {
+  const player = {
     playerId,
     name: cleanName(name),
     connected: true,
     lastSeen: Date.now(),
+    boardId: null,
+  };
+  state.players.push(player);
+  if (isHost) state.hostPlayerId = playerId;
+  return player;
+}
+
+export function addBoard(state, { boardId, name, createdBy = null }) {
+  const board = {
+    boardId: boardId || uid('b'),
+    name: cleanName(name),
+    createdBy,
     zones: { deck: [], hand: [], discard: [], delayed: [] },
   };
-  state.seats.push(seat);
-  if (isHost) state.hostPlayerId = playerId;
-  return seat;
+  state.boards.push(board);
+  return board;
+}
+
+// Older states (schema 1) had one merged `seats` list. Convert in place:
+// each seat becomes a board (reusing playerId as boardId, so card ownerIds
+// still match) possessed by a player of the same identity.
+export function migrateState(state) {
+  if (!state || typeof state !== 'object' || !Array.isArray(state.seats)) return state;
+  state.players = state.seats.map((s) => ({
+    playerId: s.playerId,
+    name: s.name,
+    connected: !!s.connected,
+    lastSeen: s.lastSeen || 0,
+    boardId: s.playerId,
+  }));
+  state.boards = state.seats.map((s) => ({
+    boardId: s.playerId,
+    name: s.name,
+    createdBy: s.playerId,
+    zones: s.zones,
+  }));
+  delete state.seats;
+  state.schema = 2;
+  return state;
 }
 
 export function cleanName(name) {
   return String(name || 'Player').trim().slice(0, MAX_NAME) || 'Player';
 }
 
-// Turn deck definitions (from the deck builder) into owned card instances.
-export function makeCardInstances(state, seat, defs) {
+// Turn deck definitions (from the deck builder) into card instances owned
+// by a board. Ownership follows the board, not the person playing it.
+export function makeCardInstances(state, board, defs) {
   const ids = [];
   for (const d of defs || []) {
     if (!d || !d.title) continue;
@@ -101,20 +158,20 @@ export function makeCardInstances(state, seat, defs) {
       spiritGuide: String(d.spiritGuide || '').slice(0, 60),
       upgrades: [normalizeUpgrade(d.upgrades?.[0]), normalizeUpgrade(d.upgrades?.[1])],
       upgrade: null, // null | 0 | 1 — which upgrade option is selected
-      ownerId: seat.playerId, // original owner, never changes
-      ownerName: seat.name,
+      ownerId: board.boardId, // original owner board, never changes
+      ownerName: board.name,
     };
     ids.push(id);
   }
   return ids;
 }
 
-// Pools hold at most one copy of each card: the titles (lowercased) a player
+// Pools hold at most one copy of each card: the titles (lowercased) a board
 // already owns, wherever those cards currently sit on the table.
-export function ownedTitles(state, playerId) {
+export function ownedTitles(state, boardId) {
   const titles = new Set();
   for (const card of Object.values(state.cards)) {
-    if (card.ownerId === playerId) titles.add(String(card.title).toLowerCase());
+    if (card.ownerId === boardId) titles.add(String(card.title).toLowerCase());
   }
   return titles;
 }
@@ -128,10 +185,10 @@ export function shuffle(arr) {
 }
 
 export function findCard(state, cardId) {
-  for (const seat of state.seats) {
+  for (const board of state.boards) {
     for (const zone of ZONES) {
-      const index = seat.zones[zone].indexOf(cardId);
-      if (index >= 0) return { seat, zone, index };
+      const index = board.zones[zone].indexOf(cardId);
+      if (index >= 0) return { board, zone, index };
     }
   }
   return null;
@@ -139,22 +196,27 @@ export function findCard(state, cardId) {
 
 function removeFromZones(state, cardId) {
   const loc = findCard(state, cardId);
-  if (loc) loc.seat.zones[loc.zone].splice(loc.index, 1);
+  if (loc) loc.board.zones[loc.zone].splice(loc.index, 1);
   return loc;
 }
 
 // Rebuild a trustworthy state from a saved board file: unknown fields are
 // dropped, every value re-normalized, zone entries deduped and checked
-// against the card map, and orphan cards discarded.
-export function sanitizeLoadedState(raw) {
-  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.seats) || typeof raw.cards !== 'object' || raw.cards === null) {
+// against the card map, and orphan cards discarded. A save holds EVERY
+// board, whether or not a player possesses it — loading with fewer players
+// than boards simply leaves boards open for the taking. Older saves
+// (schema 1, merged seats) are migrated first.
+export function sanitizeLoadedState(rawIn) {
+  const raw = migrateState(rawIn);
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.boards) || typeof raw.cards !== 'object' || raw.cards === null) {
     throw new Error('That is not a Card Party save file.');
   }
   const state = {
-    schema: 1,
+    schema: 2,
     roomCode: String(raw.roomCode || ''),
     hostPlayerId: raw.hostPlayerId ? String(raw.hostPlayerId) : null,
-    seats: [],
+    players: [],
+    boards: [],
     cards: {},
     version: 0,
   };
@@ -174,28 +236,41 @@ export function sanitizeLoadedState(raw) {
     };
   }
   const placed = new Set();
-  for (const s of raw.seats.slice(0, MAX_PLAYERS)) {
-    if (!s || !s.playerId) continue;
-    const seat = {
-      playerId: String(s.playerId),
-      name: cleanName(s.name),
-      connected: false,
-      lastSeen: 0,
+  for (const b of raw.boards.slice(0, MAX_BOARDS)) {
+    if (!b || !b.boardId) continue;
+    const board = {
+      boardId: String(b.boardId),
+      name: cleanName(b.name),
+      createdBy: b.createdBy ? String(b.createdBy) : null,
       zones: { deck: [], hand: [], discard: [], delayed: [] },
     };
     for (const zone of ZONES) {
-      for (const id of (s.zones?.[zone] || [])) {
+      for (const id of (b.zones?.[zone] || [])) {
         if (state.cards[id] && !placed.has(id)) {
-          seat.zones[zone].push(id);
+          board.zones[zone].push(id);
           placed.add(id);
         }
       }
     }
-    state.seats.push(seat);
+    state.boards.push(board);
   }
-  if (!state.seats.length) throw new Error('The save file contains no players.');
+  if (!state.boards.length) throw new Error('The save file contains no boards.');
   for (const id of Object.keys(state.cards)) {
     if (!placed.has(id)) delete state.cards[id];
+  }
+  const claimed = new Set();
+  for (const p of (Array.isArray(raw.players) ? raw.players : []).slice(0, MAX_PLAYERS)) {
+    if (!p || !p.playerId) continue;
+    let boardId = p.boardId ? String(p.boardId) : null;
+    if (boardId && (claimed.has(boardId) || !state.boards.some((b) => b.boardId === boardId))) boardId = null;
+    if (boardId) claimed.add(boardId);
+    state.players.push({
+      playerId: String(p.playerId),
+      name: cleanName(p.name),
+      connected: false,
+      lastSeen: 0,
+      boardId,
+    });
   }
   return state;
 }
@@ -203,16 +278,17 @@ export function sanitizeLoadedState(raw) {
 // Applies one action from `actorId`. Mutates state. Returns {ok} or {ok:false, reason}.
 export function applyAction(state, actorId, action) {
   const fail = (reason) => ({ ok: false, reason });
-  const actor = getSeat(state, actorId);
+  const actor = getPlayer(state, actorId);
   if (!actor) return fail('You are not seated at this table.');
   if (!action || typeof action !== 'object') return fail('Malformed action.');
   const isHost = actorId === state.hostPlayerId;
+  const myBoard = actor.boardId ? getBoard(state, actor.boardId) : null;
 
   switch (action.type) {
     case 'moveCard': {
       const { cardId, to } = action;
       if (!state.cards[cardId]) return fail('Unknown card.');
-      const target = to && getSeat(state, to.playerId);
+      const target = to && getBoard(state, to.boardId);
       if (!target || !ZONES.includes(to.zone)) return fail('Invalid destination.');
       removeFromZones(state, cardId);
       const arr = target.zones[to.zone];
@@ -222,18 +298,19 @@ export function applyAction(state, actorId, action) {
     }
 
     case 'draw': {
+      if (!myBoard) return fail('You need a board to draw — claim or start one first.');
       const n = Math.max(1, Math.min(20, (action.n | 0) || 1));
       for (let i = 0; i < n; i++) {
-        const cardId = actor.zones.deck.shift();
+        const cardId = myBoard.zones.deck.shift();
         if (!cardId) break;
-        actor.zones.hand.push(cardId);
+        myBoard.zones.hand.push(cardId);
       }
       break;
     }
 
     case 'shuffle': {
-      const target = getSeat(state, action.playerId || actorId);
-      if (!target) return fail('No such player.');
+      const target = action.boardId ? getBoard(state, action.boardId) : myBoard;
+      if (!target) return fail('No such board.');
       const zone = ZONES.includes(action.zone) ? action.zone : 'deck';
       shuffle(target.zones[zone]);
       break;
@@ -247,30 +324,36 @@ export function applyAction(state, actorId, action) {
       break;
     }
 
-    // Rename yourself — or, as the host, any player.
+    // Rename yourself — or, as the host, any player. The board a player
+    // created follows their name; a board they merely possess keeps its
+    // original identity ("playing as Alice" doesn't rename Alice's board).
     case 'rename': {
       const targetId = action.playerId || actorId;
       if (targetId !== actorId && !isHost) return fail('Only the host can rename other players.');
-      const target = getSeat(state, targetId);
+      const target = getPlayer(state, targetId);
       if (!target) return fail('No such player.');
       const name = cleanName(action.name);
       target.name = name;
-      for (const card of Object.values(state.cards)) {
-        if (card.ownerId === targetId) card.ownerName = name;
+      const ownBoard = state.boards.find((b) => b.createdBy === targetId);
+      if (ownBoard) {
+        ownBoard.name = name;
+        for (const card of Object.values(state.cards)) {
+          if (card.ownerId === ownBoard.boardId) card.ownerName = name;
+        }
       }
       break;
     }
 
-    // Shuffle newly chosen cards into a pool — your own, or (host only)
-    // any player's. The cards belong to the pool's owner either way.
-    // No repeats: a title the player already owns is skipped.
+    // Shuffle newly chosen cards into a board's pool — your own board, or
+    // (host only) any board. The cards belong to the board either way.
+    // No repeats: a title the board already owns is skipped.
     case 'addCards': {
-      const targetId = action.playerId || actorId;
-      if (targetId !== actorId && !isHost) return fail('Only the host can add cards to another player’s pool.');
-      const target = getSeat(state, targetId);
-      if (!target) return fail('No such player.');
+      const boardId = action.boardId || actor.boardId;
+      if (boardId !== actor.boardId && !isHost) return fail('Only the host can add cards to another board’s pool.');
+      const target = boardId && getBoard(state, boardId);
+      if (!target) return fail('No such board.');
       if (!(action.deck || []).length) return fail('No cards to add.');
-      const owned = ownedTitles(state, targetId);
+      const owned = ownedTitles(state, boardId);
       const defs = [];
       for (const d of action.deck) {
         const key = String(d?.title || '').toLowerCase();
@@ -285,18 +368,33 @@ export function applyAction(state, actorId, action) {
       break;
     }
 
-    // Replace every card the actor owns (wherever it is) with a fresh shuffled deck.
-    case 'resetMyCards': {
-      for (const seat of state.seats) {
-        for (const zone of ZONES) {
-          seat.zones[zone] = seat.zones[zone].filter((id) => state.cards[id]?.ownerId !== actorId);
-        }
+    // Take possession of a board (play as its owner) — or, with boardId
+    // null, release your board and become a spectator. The board and all
+    // its cards stay on the table either way. A board can only be taken
+    // over while nobody connected is playing it.
+    case 'possessBoard': {
+      const boardId = action.boardId == null ? null : String(action.boardId);
+      if (boardId === null) {
+        actor.boardId = null;
+        break;
       }
-      for (const id of Object.keys(state.cards)) {
-        if (state.cards[id].ownerId === actorId) delete state.cards[id];
-      }
-      const ids = makeCardInstances(state, actor, action.deck || []);
-      actor.zones.deck = shuffle(ids);
+      const board = getBoard(state, boardId);
+      if (!board) return fail('No such board.');
+      const holder = state.players.find((p) => p.boardId === boardId && p.playerId !== actorId);
+      if (holder && holder.connected) return fail(`${holder.name} is playing that board.`);
+      if (holder) holder.boardId = null;
+      actor.boardId = boardId;
+      break;
+    }
+
+    // Start a fresh board (seeded with the provided starter cards, i.e. the
+    // Base cards) and possess it. A board you were playing stays on the
+    // table, open for someone else.
+    case 'newBoard': {
+      if (state.boards.length >= MAX_BOARDS) return fail(`All ${MAX_BOARDS} board slots are in use.`);
+      const board = addBoard(state, { name: actor.name, createdBy: actorId });
+      board.zones.deck = shuffle(makeCardInstances(state, board, action.deck || []));
+      actor.boardId = board.boardId;
       break;
     }
 
@@ -320,50 +418,64 @@ export function applyAction(state, actorId, action) {
       break;
     }
 
-    // Host admin: every card returns to its original owner's deck; decks shuffled.
+    // Host admin: every card returns to its owner board's deck; decks shuffled.
     case 'returnAll': {
       if (!isHost) return fail('Only the host can do that.');
-      for (const seat of state.seats) for (const zone of ZONES) seat.zones[zone] = [];
+      for (const board of state.boards) for (const zone of ZONES) board.zones[zone] = [];
       for (const card of Object.values(state.cards)) {
-        const owner = getSeat(state, card.ownerId);
+        const owner = getBoard(state, card.ownerId);
         if (owner) owner.zones.deck.push(card.id);
         else delete state.cards[card.id];
       }
-      for (const seat of state.seats) shuffle(seat.zones.deck);
+      for (const board of state.boards) shuffle(board.zones.deck);
       break;
     }
 
-    // Host admin: remove a player. Their own cards vanish with them; cards other
-    // players own that were sitting in their zones go to those owners' discard.
+    // Host admin: remove a player from the room. Their board and every card
+    // on it stay on the table, open for anyone to possess.
     case 'kick': {
       if (!isHost) return fail('Only the host can do that.');
       const pid = action.playerId;
       if (pid === state.hostPlayerId) return fail('The host cannot be kicked.');
-      const seat = getSeat(state, pid);
-      if (!seat) return fail('No such player.');
+      const player = getPlayer(state, pid);
+      if (!player) return fail('No such player.');
+      state.players = state.players.filter((p) => p !== player);
+      break;
+    }
+
+    // Host admin: delete a board. Its own cards vanish with it; cards other
+    // boards own that were sitting in its zones go to those boards' discard.
+    case 'removeBoard': {
+      if (!isHost) return fail('Only the host can do that.');
+      const board = getBoard(state, action.boardId);
+      if (!board) return fail('No such board.');
+      const bid = board.boardId;
       for (const zone of ZONES) {
-        for (const id of seat.zones[zone]) {
+        for (const id of board.zones[zone]) {
           const card = state.cards[id];
           if (!card) continue;
-          if (card.ownerId === pid) {
+          if (card.ownerId === bid) {
             delete state.cards[id];
           } else {
-            const owner = getSeat(state, card.ownerId);
+            const owner = getBoard(state, card.ownerId);
             if (owner) owner.zones.discard.push(id);
             else delete state.cards[id];
           }
         }
       }
-      for (const other of state.seats) {
-        if (other === seat) continue;
+      for (const other of state.boards) {
+        if (other === board) continue;
         for (const zone of ZONES) {
-          other.zones[zone] = other.zones[zone].filter((id) => state.cards[id]?.ownerId !== pid);
+          other.zones[zone] = other.zones[zone].filter((id) => state.cards[id]?.ownerId !== bid);
         }
       }
       for (const id of Object.keys(state.cards)) {
-        if (state.cards[id].ownerId === pid) delete state.cards[id];
+        if (state.cards[id].ownerId === bid) delete state.cards[id];
       }
-      state.seats = state.seats.filter((s) => s !== seat);
+      state.boards = state.boards.filter((b) => b !== board);
+      for (const p of state.players) {
+        if (p.boardId === bid) p.boardId = null;
+      }
       break;
     }
 

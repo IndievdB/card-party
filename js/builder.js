@@ -16,7 +16,7 @@ function normUp(u) {
   return u && typeof u === 'object' ? u : { text: String(u || ''), sticker: '' };
 }
 
-let target = null; // playerId whose pool the tools act on
+let target = null; // boardId whose pool the tools act on
 let guide = store.get('spiritGuide', ''); // your chosen spirit guide
 let search = '';
 let draft = null;  // { total, done, choices, options: [defs] }
@@ -27,8 +27,8 @@ export function configureBuilder(d) {
   deps = d;
 }
 
-export function poolToolsNode(targetPlayerId) {
-  target = targetPlayerId || null;
+export function poolToolsNode(targetBoardId) {
+  target = targetBoardId || null;
   if (!root) build();
   update();
   return root;
@@ -50,7 +50,7 @@ function titleKey(def) {
   return String(def?.title || '').toLowerCase();
 }
 
-// Pools hold one copy of each card, so everything the target player already
+// Pools hold one copy of each card, so everything the target board already
 // owns is off the menu.
 function ownedNow() {
   return deps.owned(target) || new Set();
