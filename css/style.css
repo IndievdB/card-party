@@ -151,16 +151,21 @@ input::placeholder { color: var(--faint); }
    PHYSICAL CARDS (unchanged look — they're the star)
    ===================================================================== */
 
+/* Every card prints its complete text — title, keywords, description, and
+   both upgrade options. Cards keep card-like proportions as a minimum and
+   grow taller when the text needs room. --fs scales type per size. */
 .card {
-  --cw: 84px;
+  --cw: 112px;
+  --fs: 1;
   width: var(--cw);
-  aspect-ratio: 5 / 7;
-  border-radius: calc(var(--cw) * 0.08);
+  min-height: calc(var(--cw) * 1.35);
+  border-radius: 9px;
   background:
     var(--noise),
     linear-gradient(155deg, var(--paper) 0%, var(--paper-2) 100%);
   color: var(--ink);
   position: relative;
+  display: flex;
   cursor: grab;
   user-select: none;
   flex-shrink: 0;
@@ -180,51 +185,52 @@ input::placeholder { color: var(--faint); }
 }
 .card.flying { z-index: 40; pointer-events: none; }
 .card.dragging { opacity: .45; }
-.card.hand { --cw: 132px; }
-.card.table { --cw: 104px; }
-.card.mini { --cw: 76px; }
-.card.big { --cw: 260px; cursor: default; }
+.card.hand { --cw: 158px; --fs: 1.1; }
+.card.table { --cw: 138px; --fs: 1.05; }
+.card.mini { --cw: 118px; --fs: 1; }
+.card.big { --cw: 270px; --fs: 1.4; cursor: default; }
 .card.big:hover { transform: none; }
 
 /* inner printed frame */
 .card-face {
-  position: absolute; inset: 4.5%;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  margin: calc(var(--cw) * 0.04);
   border: 1px solid rgba(70,50,20,.35);
-  border-radius: calc(var(--cw) * 0.05);
-  padding: 5% 6%;
+  border-radius: 6px;
+  padding: calc(var(--cw) * 0.045) calc(var(--cw) * 0.055);
   display: flex; flex-direction: column;
-  overflow: hidden;
   background: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,0) 30%);
 }
 .card-titlebar {
+  display: flex; align-items: flex-start; gap: 5px;
   border-bottom: 1px solid color-mix(in srgb, var(--owner, #666) 60%, transparent);
-  padding-bottom: 3%;
-  margin-bottom: 4%;
+  padding-bottom: 4px;
+  margin-bottom: 5px;
 }
 .card-title {
   font-family: var(--serif);
   font-weight: 700;
-  font-size: calc(var(--cw) * 0.105);
+  font-size: calc(12px * var(--fs));
   line-height: 1.12;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  flex: 1;
+  min-width: 0;
 }
 .card-owner {
-  font-size: calc(var(--cw) * 0.075);
+  font-size: calc(8px * var(--fs));
   font-weight: 700;
   color: var(--owner, #666);
-  margin-bottom: 3%;
+  margin-bottom: 3px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.card-keywords { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 4%; }
+.card-keywords { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 5px; }
 .kw {
   background: color-mix(in srgb, var(--owner, #6b5a3a) 22%, #efe6d0);
   color: #4a3a22;
   border: 1px solid rgba(70,50,20,.25);
   border-radius: 3px;
-  font-size: calc(var(--cw) * 0.062);
+  font-size: calc(6.5px * var(--fs));
   font-weight: 600;
   padding: 1px 4px;
   text-transform: uppercase; letter-spacing: .4px;
@@ -234,36 +240,32 @@ input::placeholder { color: var(--faint); }
 
 .card-desc {
   font-family: var(--serif);
-  font-size: calc(var(--cw) * 0.078);
+  font-size: calc(9.5px * var(--fs));
   line-height: 1.3;
   color: #4c3f2c;
-  overflow: hidden;
   flex: 1;
 }
-.card.mini .card-desc { display: none; }
-.card.mini .card-face { padding: 6% 7%; }
-.card.mini .card-title { font-size: calc(var(--cw) * 0.125); -webkit-line-clamp: 3; }
-.card.table .card-desc { font-size: calc(var(--cw) * 0.085); }
 
 .card-ups {
   border-top: 1px dashed rgba(70,50,20,.35);
-  margin-top: 4%; padding-top: 3%;
-  display: flex; flex-direction: column; gap: 4px;
-  font-size: calc(var(--cw) * 0.062);
+  margin-top: 5px; padding-top: 4px;
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: calc(8.5px * var(--fs));
+  line-height: 1.3;
   font-family: var(--serif);
 }
-.up-line { display: flex; gap: 6px; align-items: baseline; padding: 3px 5px; border-radius: 5px; color: #5a4a33; }
+.up-line { display: flex; gap: 5px; align-items: baseline; padding: 2px 4px; border-radius: 4px; color: #5a4a33; }
 .up-line.sel { background: linear-gradient(90deg, #f3dd9c, #eed27f); color: #3d3013; box-shadow: inset 0 0 0 1px #c9a227; }
 .up-star { font-weight: 700; color: #a5822c; white-space: nowrap; }
 
 .card-seal {
-  position: absolute; right: 4%; bottom: 4%;
-  width: calc(var(--cw) * 0.12); height: calc(var(--cw) * 0.12);
+  width: calc(11px * var(--fs)); height: calc(11px * var(--fs));
+  flex-shrink: 0;
+  margin-top: 1px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--owner, #666) 60%, #fff), var(--owner, #666) 70%);
   box-shadow: 0 1px 2px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.35);
 }
-.card.big .card-seal { width: 22px; height: 22px; }
 
 .card.upgraded .card-face { box-shadow: inset 0 0 0 2px #c9a227; }
 .card-upgrade-tag {
@@ -400,6 +402,7 @@ input::placeholder { color: var(--faint); }
 .pile-stack { position: relative; width: 84px; aspect-ratio: 5 / 7; }
 .seat:not(.me) .pile-stack, .seat:not(.me) .card-back { --cw: 76px; width: 76px; }
 .seat:not(.me) .pile { min-width: 76px; min-height: 107px; }
+.pile.deck { cursor: grab; }
 .pile.deck:hover .card-back:first-child { transform: translateY(-3px); }
 .card-back { transition: transform .15s; }
 .pile-empty-mark {

@@ -118,9 +118,9 @@ function helpBody() {
     p('Card Party is a rules-free shared tabletop. Everything is public and anything goes — the honor system is the only referee.'),
     el('ul', {},
       el('li', { text: 'Each player has a Deck, a Hand, a Discard pile, and a Delayed space. All four are visible to everyone.' }),
-      el('li', { text: 'Tap your own deck to draw a card. Drag any card onto any zone — yours or another player’s.' }),
-      el('li', { text: 'Hover a card to read it; click it to pick it up — choose an upgrade option or move it precisely (e.g. bottom of a deck).' }),
-      el('li', { text: 'Click any other pile to look through it — decks are public too.' }),
+      el('li', { text: 'Drag the top card off a deck to draw it (or use the Draw button). Drag any card onto any zone — yours or another player’s.' }),
+      el('li', { text: 'Click a card to pick it up — choose an upgrade option or move it precisely (e.g. bottom of a deck).' }),
+      el('li', { text: 'Click any pile to look through it — decks are public too.' }),
       el('li', { text: 'A card’s back and seal are colored by its original owner; it never forgets whose it is.' }),
       el('li', { text: 'If you disconnect, rejoin with the same room code from the same browser and you get your seat and cards back.' }),
       el('li', { text: 'The host can kick/block players, and send every card back to its owner’s deck.' }),
@@ -151,7 +151,10 @@ export function cardEl(state, ctx, cardId, opts = {}) {
   node.style.setProperty('--owner', ownerColor(state, card.ownerId));
 
   const face = el('div', { class: 'card-face' });
-  face.append(el('div', { class: 'card-titlebar' }, el('span', { class: 'card-title', text: card.title })));
+  face.append(el('div', { class: 'card-titlebar' },
+    el('span', { class: 'card-title', text: card.title }),
+    el('span', { class: 'card-seal', title: 'Owner: ' + card.ownerName }),
+  ));
 
   const foreign = opts.zoneOwnerId && opts.zoneOwnerId !== card.ownerId;
   if (foreign) {
@@ -166,9 +169,9 @@ export function cardEl(state, ctx, cardId, opts = {}) {
     face.append(el('div', { class: 'card-desc', text: card.description }));
   }
 
-  // Big cards print both upgrade options, like the physical card would;
-  // the chosen one is gilded. Small sizes just show the gold tag.
-  if (size === 'big' && (card.upgrades[0] || card.upgrades[1])) {
+  // Every card prints its full text, upgrade options included — like the
+  // physical card would. The chosen upgrade is gilded.
+  if (card.upgrades[0] || card.upgrades[1]) {
     face.append(el('div', { class: 'card-ups' },
       [0, 1].map((i) => card.upgrades[i]
         ? el('div', { class: 'up-line' + (card.upgrade === i ? ' sel' : '') },
@@ -177,7 +180,6 @@ export function cardEl(state, ctx, cardId, opts = {}) {
         : null)));
   }
   node.append(face);
-  face.append(el('div', { class: 'card-seal', title: 'Owner: ' + card.ownerName }));
   if (card.upgrade != null && size !== 'big') {
     node.append(el('div', { class: 'card-upgrade-tag', text: '★' + (card.upgrade === 0 ? 'A' : 'B') }));
   }
@@ -582,12 +584,15 @@ function deckPileEl(state, ctx, seat, isMe) {
   const pile = el('div', {
     class: 'pile deck' + (isMe ? ' mine' : ''),
     dataset: { pile: pileKey(seat, 'deck') },
-    title: isMe
-      ? 'Tap to draw a card · drop a card to put it on top'
-      : `${seat.name}’s deck — click to look through it (decks are public)`,
-    onClick: () => {
-      if (isMe) ctx.dispatch({ type: 'draw', n: 1 });
-      else openModal('zone', { playerId: seat.playerId, zone: 'deck' });
+    draggable: count ? 'true' : null,
+    title: 'Click to look through the deck (decks are public) · drag off the top card to draw it',
+    onClick: () => openModal('zone', { playerId: seat.playerId, zone: 'deck' }),
+    // Dragging the pile picks up its top card — drop it anywhere to draw it there.
+    onDragstart: (e) => {
+      const top = seat.zones.deck[0];
+      if (!top) { e.preventDefault(); return; }
+      e.dataTransfer.setData('text/plain', top);
+      e.dataTransfer.effectAllowed = 'move';
     },
   }, stack, el('div', { class: 'pile-count', text: String(count) }), el('div', { class: 'pile-tag', text: 'Deck' }));
   return makeDropTarget(pile, ctx, seat.playerId, 'deck');
@@ -655,12 +660,7 @@ function seatPanel(state, ctx, seat, isMe) {
   if (isMe) {
     const actions = el('div', { class: 'pile-actions' },
       el('button', { class: 'btn small primary', text: 'Draw', onClick: () => ctx.dispatch({ type: 'draw', n: 1 }) }),
-      el('button', { class: 'btn small', text: 'Draw 5', onClick: () => ctx.dispatch({ type: 'draw', n: 5 }) }),
       el('button', { class: 'btn small', text: 'Shuffle', onClick: () => { ctx.dispatch({ type: 'shuffle', zone: 'deck' }); toast('Deck shuffled'); } }),
-      el('button', {
-        class: 'btn small', text: 'Search', title: 'Look through your own deck',
-        onClick: () => openModal('zone', { playerId: seat.playerId, zone: 'deck' }),
-      }),
     );
     panel.append(
       delayedStripEl(state, ctx, seat, true),
