@@ -7,7 +7,7 @@
 // and only re-renders its dynamic parts on its own interactions.
 
 import { el, toast } from './ui.js';
-import { normalizeCategory, categoryLabel } from './game.js';
+import { normalizeCategory, categoryLabel, guideHue } from './game.js';
 import { store } from './store.js';
 
 let deps = { getLibrary: () => [], retryLoad: () => {}, add: () => {} };
@@ -186,7 +186,7 @@ function renderSel() {
 }
 
 function libRow(def) {
-  return el('div', { class: 'lib-card cat-' + catOf(def) },
+  const row = el('div', { class: 'lib-card cat-' + catOf(def) },
     el('div', { class: 'lib-card-main' },
       el('div', { class: 'lib-title', text: def.title }),
       el('div', { class: 'lib-cat', text: categoryLabel(def) }),
@@ -202,6 +202,8 @@ function libRow(def) {
     el('div', { class: 'lib-card-actions' },
       el('button', { class: 'btn small primary', text: '+ Add', onClick: () => { sel.push(clone(def)); update(); } })),
   );
+  if (catOf(def) === 'spirit') row.style.setProperty('--sg', guideHue(def.spiritGuide));
+  return row;
 }
 
 function renderLib() {
@@ -251,7 +253,9 @@ function renderLib() {
       store.set('spiritGuide', guide);
       renderLib();
     });
-    parts.libWrap.append(el('div', { class: 'lib-section-head' }, 'Spirit Guide', guideSel));
+    const guideDot = guide ? el('span', { class: 'guide-dot' }) : null;
+    if (guideDot) guideDot.style.background = `hsl(${guideHue(guide)} 55% 55%)`;
+    parts.libWrap.append(el('div', { class: 'lib-section-head' }, 'Spirit Guide', guideSel, guideDot));
     if (!guide) {
       parts.libWrap.append(el('p', { class: 'empty', text: 'Select your spirit guide to see and add its cards.' }));
     } else {

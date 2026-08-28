@@ -29,6 +29,18 @@ export function normalizeCategory(c) {
   return 'general';
 }
 
+// Every spirit guide gets its own color: the guide's name picks a hue from a
+// curated palette, deterministically, so the color is stable everywhere and
+// works for whatever guides the sheet defines.
+const GUIDE_HUES = [265, 195, 150, 330, 20, 45, 285, 175, 95, 220];
+export function guideHue(name) {
+  const s = String(name || '').trim().toLowerCase();
+  if (!s) return 215;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return GUIDE_HUES[h % GUIDE_HUES.length];
+}
+
 // Printed name of a card's category, including which spirit guide it serves.
 export function categoryLabel(card) {
   const cat = normalizeCategory(card.category);
