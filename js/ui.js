@@ -504,6 +504,32 @@ function adminModalBody(state, ctx) {
       }
     },
   }));
+
+  // Save/load the whole board for games spanning multiple sessions.
+  wrap.append(el('h4', { text: 'Save & load' }));
+  const fileInput = el('input', { type: 'file', accept: 'application/json,.json', id: 'admin-load-file' });
+  fileInput.style.display = 'none';
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+    if (confirm('Load this save? It replaces the whole table — every player, their cards, and zones — with the saved game.')) {
+      ctx.loadBoard?.(file);
+    }
+  });
+  wrap.append(el('div', { class: 'admin-saveload' },
+    el('button', {
+      class: 'btn', id: 'admin-save-board', text: 'Save board to file',
+      title: 'Download the entire table — players, cards, and where everything is — as a file',
+      onClick: () => ctx.saveBoard?.(),
+    }),
+    el('button', {
+      class: 'btn', text: 'Load board from file',
+      title: 'Restore a previously saved table; players rejoin to reclaim their seats',
+      onClick: () => fileInput.click(),
+    }),
+    fileInput,
+  ));
   return wrap;
 }
 

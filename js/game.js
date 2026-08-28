@@ -131,6 +131,63 @@ function removeFromZones(state, cardId) {
   return loc;
 }
 
+// Rebuild a trustworthy state from a saved board file: unknown fields are
+// dropped, every value re-normalized, zone entries deduped and checked
+// against the card map, and orphan cards discarded.
+export function sanitizeLoadedState(raw) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.seats) || typeof raw.cards !== 'object' || raw.cards === null) {
+    throw new Error('That is not a Card Party save file.');
+  }
+  const state = {
+    schema: 1,
+    roomCode: String(raw.roomCode || ''),
+    hostPlayerId: raw.hostPlayerId ? String(raw.hostPlayerId) : null,
+    seats: [],
+    cards: {},
+    version: 0,
+  };
+  for (const [id, c] of Object.entries(raw.cards)) {
+    if (!c || !c.title) continue;
+    state.cards[id] = {
+      id,
+      title: String(c.title).slice(0, 80),
+      description: String(c.description || '').slice(0, 1000),
+      keywords: Array.isArray(c.keywords) ? c.keywords.map(String).slice(0, 12) : [],
+      category: normalizeCategory(c.category),
+      spiritGuide: String(c.spiritGuide || '').slice(0, 60),
+      upgrades: [normalizeUpgrade(c.upgrades?.[0]), normalizeUpgrade(c.upgrades?.[1])],
+      upgrade: c.upgrade === 0 || c.upgrade === 1 ? c.upgrade : null,
+      ownerId: String(c.ownerId || ''),
+      ownerName: cleanName(c.ownerName),
+    };
+  }
+  const placed = new Set();
+  for (const s of raw.seats.slice(0, MAX_PLAYERS)) {
+    if (!s || !s.playerId) continue;
+    const seat = {
+      playerId: String(s.playerId),
+      name: cleanName(s.name),
+      connected: false,
+      lastSeen: 0,
+      zones: { deck: [], hand: [], discard: [], delayed: [] },
+    };
+    for (const zone of ZONES) {
+      for (const id of (s.zones?.[zone] || [])) {
+        if (state.cards[id] && !placed.has(id)) {
+          seat.zones[zone].push(id);
+          placed.add(id);
+        }
+      }
+    }
+    state.seats.push(seat);
+  }
+  if (!state.seats.length) throw new Error('The save file contains no players.');
+  for (const id of Object.keys(state.cards)) {
+    if (!placed.has(id)) delete state.cards[id];
+  }
+  return state;
+}
+
 // Applies one action from `actorId`. Mutates state. Returns {ok} or {ok:false, reason}.
 export function applyAction(state, actorId, action) {
   const fail = (reason) => ({ ok: false, reason });

@@ -1,7 +1,7 @@
 // App wiring: views, sessions (host/client), library loading, and the game context.
 
 import { store, getIdentity, saveIdentity } from './store.js';
-import { newState, addSeat, cleanName } from './game.js';
+import { newState, addSeat, cleanName, sanitizeLoadedState } from './game.js';
 import { HostSession, ClientSession, randomCode, normalizeCode, peerAvailable } from './net.js';
 import { renderGame, refreshModal, openModal, closeModal, toast, el } from './ui.js';
 import { loadLibrary } from './sheet.js';
@@ -95,6 +95,29 @@ function gameCtx() {
       if (session?.role === 'host') session.broadcastReload?.();
       if (source === 'live') toast('Cards reloaded from the sheet — in-play cards updated.');
       else toast('Sheet unreachable — applied the cached card list to in-play cards.', 'warn');
+    },
+    // Host admin: save the whole board (players, cards, zones) to a file, and
+    // load one back later for games spanning multiple sessions.
+    saveBoard: () => {
+      if (!latestState) return;
+      const blob = new Blob([JSON.stringify(latestState, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `card-party-${latestState.roomCode}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      toast('Board saved to file');
+    },
+    loadBoard: async (file) => {
+      if (session?.role !== 'host') return toast('Only the host can load a board.', 'warn');
+      try {
+        const cleaned = sanitizeLoadedState(JSON.parse(await file.text()));
+        session.loadState(cleaned);
+        closeModal();
+        toast('Board loaded — players rejoin to reclaim their seats.');
+      } catch (err) {
+        toast('Could not load the save: ' + (err.message || err), 'warn');
+      }
     },
     leave: leaveGame,
   };

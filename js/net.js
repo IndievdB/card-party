@@ -199,6 +199,45 @@ export class HostSession {
     return res;
   }
 
+  // Replace the whole board with a saved state (already sanitized). The room
+  // code stays this room's; the loading host takes over the saved host seat
+  // if identities differ; connected players keep or regain their seats.
+  loadState(loaded) {
+    const myId = this.state.hostPlayerId;
+    const myName = getSeat(this.state, myId)?.name;
+    loaded.roomCode = this.state.roomCode;
+
+    if (!loaded.seats.some((s) => s.playerId === myId)) {
+      // Take over the saved host's seat (or the first seat) and its cards.
+      const hostSeat = loaded.seats.find((s) => s.playerId === loaded.hostPlayerId) || loaded.seats[0];
+      const oldId = hostSeat.playerId;
+      hostSeat.playerId = myId;
+      if (myName) hostSeat.name = myName;
+      for (const card of Object.values(loaded.cards)) {
+        if (card.ownerId === oldId) {
+          card.ownerId = myId;
+          if (myName) card.ownerName = myName;
+        }
+      }
+    }
+    loaded.hostPlayerId = myId;
+
+    // Players connected right now who aren't in the save keep a (fresh) seat.
+    for (const pid of this.conns.keys()) {
+      if (!loaded.seats.some((s) => s.playerId === pid) && loaded.seats.length < MAX_PLAYERS) {
+        const current = getSeat(this.state, pid);
+        addSeat(loaded, { playerId: pid, name: current ? current.name : 'Player' });
+      }
+    }
+    for (const seat of loaded.seats) {
+      seat.connected = seat.playerId === myId || this.conns.has(seat.playerId);
+      seat.lastSeen = Date.now();
+    }
+
+    this.state = loaded;
+    this._changed();
+  }
+
   // Nudge every client to re-fetch the card library from the sheet.
   broadcastReload() {
     for (const conn of this.conns.values()) this._send(conn, { t: 'reloadLibrary' });

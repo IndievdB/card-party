@@ -596,6 +596,7 @@ input::placeholder { color: var(--faint); }
 .admin-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
 .admin-row .dot { background: var(--green); }
 .admin-row .dot.off { background: #999; opacity: .5; }
+.admin-saveload { display: flex; gap: 8px; flex-wrap: wrap; }
 .admin-name { flex: 1; font-size: .92rem; }
 
 /* ---------- toasts ---------- */
