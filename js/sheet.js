@@ -64,6 +64,7 @@ async function fetchLibrary() {
   const colUp2 = findCol((l, i) => isUpgradeText(l) && i !== colUp1, 4);
   const colSt1 = findCol((l) => l.includes('sticker') && /(1|a|one|left)\b/.test(l), -1);
   const colSt2 = findCol((l, i) => l.includes('sticker') && i !== colSt1, -1);
+  const colCat = findCol((l) => l.includes('categor'), -1);
 
   const cards = [];
   for (const row of rows) {
@@ -74,6 +75,7 @@ async function fetchLibrary() {
       title,
       description: cellText(c[colDesc]),
       keywords: splitKeywords(cellText(c[colKeywords])),
+      category: colCat >= 0 ? cellText(c[colCat]) : '',
       upgrades: [
         { text: cellText(c[colUp1]), sticker: colSt1 >= 0 ? cellText(c[colSt1]) : '' },
         { text: cellText(c[colUp2]), sticker: colSt2 >= 0 ? cellText(c[colSt2]) : '' },

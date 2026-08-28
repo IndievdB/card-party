@@ -282,6 +282,48 @@ input::placeholder { color: var(--faint); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* ---- card categories (from the sheet's Category column) ----
+   General keeps the cream paper; Death is dark; Spirit Guide is ethereal. */
+.card.cat-death {
+  background:
+    var(--noise),
+    linear-gradient(155deg, #3a3542 0%, #262230 100%);
+  color: #eae4d6;
+}
+.card.cat-death .card-face {
+  border-color: rgba(234,228,214,.35);
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,0) 30%);
+}
+.card.cat-death .card-desc { color: #c8c1b0; }
+.card.cat-death .kw { background: rgba(234,228,214,.14); color: #ddd6c6; border-color: rgba(234,228,214,.3); }
+.card.cat-death .card-ups { border-top-color: rgba(234,228,214,.35); }
+.card.cat-death .up-line { color: #b8b09c; }
+.card.cat-death .up-star { color: #d9b64a; }
+
+.card.cat-spirit {
+  background:
+    var(--noise),
+    linear-gradient(155deg, #f0f5fa 0%, #dbe6f3 100%);
+  color: #2b3a55;
+  box-shadow:
+    0 0 0 1px rgba(100, 130, 190, .3),
+    0 1px 2px rgba(28, 27, 24, .14),
+    0 4px 12px rgba(80, 110, 170, .22);
+}
+.card.cat-spirit .card-face {
+  border-color: rgba(100,130,190,.45);
+  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 35%);
+}
+.card.cat-spirit .card-desc { color: #46587e; }
+.card.cat-spirit .kw { background: rgba(120,150,210,.16); color: #3b4e77; border-color: rgba(100,130,190,.35); }
+.card.cat-spirit .card-ups { border-top-color: rgba(100,130,190,.4); }
+.card.cat-spirit .up-line { color: #56658e; }
+.card.cat-spirit .up-star { color: #6d7fb5; }
+
+/* category cue on library rows */
+.lib-card.cat-death { border-left: 4px solid #3a3542; background: #f2f0f4; }
+.lib-card.cat-spirit { border-left: 4px solid #8aa3cf; background: #f3f7fc; }
+
 /* deal-in animation for brand-new cards */
 @keyframes deal-in {
   from { transform: scale(.5) rotate(-8deg); opacity: 0; }

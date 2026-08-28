@@ -20,6 +20,15 @@ export function normalizeUpgrade(u) {
   }
   return { text: String(u || '').slice(0, 1000), sticker: '' };
 }
+// Card categories from the sheet's Category column. Each is styled
+// distinctly on the card face.
+export function normalizeCategory(c) {
+  const s = String(c || '').toLowerCase();
+  if (s.includes('death')) return 'death';
+  if (s.includes('spirit')) return 'spirit';
+  return 'general';
+}
+
 export const MAX_PLAYERS = 10;
 export const MAX_NAME = 24;
 
@@ -66,6 +75,7 @@ export function makeCardInstances(state, seat, defs) {
       title: String(d.title).slice(0, 80),
       description: String(d.description || '').slice(0, 1000),
       keywords: Array.isArray(d.keywords) ? d.keywords.map(String).slice(0, 12) : [],
+      category: normalizeCategory(d.category),
       upgrades: [normalizeUpgrade(d.upgrades?.[0]), normalizeUpgrade(d.upgrades?.[1])],
       upgrade: null, // null | 0 | 1 — which upgrade option is selected
       ownerId: seat.playerId, // original owner, never changes
@@ -161,12 +171,17 @@ export function applyAction(state, actorId, action) {
       break;
     }
 
-    // Shuffle newly chosen cards into the actor's pool.
+    // Shuffle newly chosen cards into a pool — your own, or (host only)
+    // any player's. The cards belong to the pool's owner either way.
     case 'addCards': {
-      const ids = makeCardInstances(state, actor, action.deck || []);
+      const targetId = action.playerId || actorId;
+      if (targetId !== actorId && !isHost) return fail('Only the host can add cards to another player’s pool.');
+      const target = getSeat(state, targetId);
+      if (!target) return fail('No such player.');
+      const ids = makeCardInstances(state, target, action.deck || []);
       if (!ids.length) return fail('No cards to add.');
-      actor.zones.deck.push(...ids);
-      shuffle(actor.zones.deck);
+      target.zones.deck.push(...ids);
+      shuffle(target.zones.deck);
       break;
     }
 

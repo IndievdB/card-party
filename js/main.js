@@ -10,7 +10,6 @@ import { configureBuilder, poolToolsNode } from './builder.js';
 let session = null; // HostSession | ClientSession
 let latestState = null;
 let clientStatus = 'connecting';
-let autoOpenedBuilder = false;
 
 // The one shared card library (hardcoded sheet). Loaded at startup.
 let library = [];
@@ -101,10 +100,6 @@ function gameCtx() {
   };
 }
 
-function openMyPool() {
-  openModal('zone', { playerId: getIdentity().playerId, zone: 'deck' });
-}
-
 function dispatch(action) {
   if (!session) return;
   const res = session.dispatch(action);
@@ -115,20 +110,6 @@ function onState(state) {
   latestState = state;
   renderGame(document.getElementById('game-root'), state, gameCtx());
   refreshModal();
-
-  // First time at the table with no cards of your own: open your pool, which
-  // carries the tools for adding cards to it.
-  if (!autoOpenedBuilder && session) {
-    const myId = getIdentity().playerId;
-    const seated = state.seats.some((s) => s.playerId === myId);
-    const ownsCards = Object.values(state.cards).some((c) => c.ownerId === myId);
-    if (seated && !ownsCards) {
-      autoOpenedBuilder = true;
-      openMyPool();
-    } else if (seated) {
-      autoOpenedBuilder = true; // returning player with cards — don't nag
-    }
-  }
 }
 
 function rerender() {
@@ -200,7 +181,6 @@ async function hostGame({ restore = false } = {}) {
   setBusy(false);
 
   session = host;
-  autoOpenedBuilder = false;
   store.set(lastRoomKey(), { code, role: 'host' });
   store.set('hostState.' + code, state);
   showView('game');
@@ -247,7 +227,6 @@ function joinGame(codeInput) {
     },
   });
   session = client;
-  autoOpenedBuilder = false;
   client.connect();
   store.set(lastRoomKey(), { code, role: 'client' });
   showView('game');
@@ -277,7 +256,6 @@ function endSession() {
     session = null;
   }
   latestState = null;
-  autoOpenedBuilder = false;
   closeModal();
   document.getElementById('conn-banner').classList.add('hidden');
 }
@@ -351,9 +329,9 @@ function init() {
   configureBuilder({
     getLibrary: () => library,
     retryLoad: loadLibraryNow,
-    add: (defs) => {
-      dispatch({ type: 'addCards', deck: defs });
-      toast(`Shuffled ${defs.length} card${defs.length === 1 ? '' : 's'} into your pool`);
+    add: (defs, targetPlayerId) => {
+      dispatch({ type: 'addCards', deck: defs, playerId: targetPlayerId });
+      toast(`Shuffled ${defs.length} card${defs.length === 1 ? '' : 's'} into the pool`);
     },
   });
 

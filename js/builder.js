@@ -7,6 +7,7 @@
 // and only re-renders its dynamic parts on its own interactions.
 
 import { el, toast } from './ui.js';
+import { normalizeCategory } from './game.js';
 
 let deps = { getLibrary: () => [], retryLoad: () => {}, add: () => {} };
 
@@ -15,6 +16,7 @@ function normUp(u) {
 }
 
 let sel = [];      // chosen card defs
+let target = null; // playerId whose pool the tools act on
 let search = '';
 let draft = null;  // { total, done, choices, options: [defs] }
 let root = null;
@@ -24,7 +26,8 @@ export function configureBuilder(d) {
   deps = d;
 }
 
-export function poolToolsNode() {
+export function poolToolsNode(targetPlayerId) {
+  target = targetPlayerId || null;
   if (!root) build();
   update();
   return root;
@@ -83,7 +86,7 @@ function build() {
     class: 'btn small primary', id: 'bld-deal',
     onClick: () => {
       if (!sel.length) return toast('Pick some cards first.', 'warn');
-      deps.add(sel.map(clone));
+      deps.add(sel.map(clone), target);
       sel = [];
       update();
     },
@@ -191,7 +194,7 @@ function renderLib() {
   });
   if (!cards.length) parts.libWrap.append(el('p', { class: 'empty', text: 'No cards match.' }));
   for (const def of cards) {
-    parts.libWrap.append(el('div', { class: 'lib-card' },
+    parts.libWrap.append(el('div', { class: 'lib-card cat-' + normalizeCategory(def.category) },
       el('div', { class: 'lib-card-main' },
         el('div', { class: 'lib-title', text: def.title }),
         def.keywords?.length ? el('div', { class: 'card-keywords' }, def.keywords.map((k) => el('span', { class: 'kw', text: k }))) : null,
@@ -226,7 +229,7 @@ function renderDraft() {
 
 // A physical-style card rendered from a library definition (no owner yet).
 function defCard(def, onPick) {
-  const node = el('div', { class: 'card table pickable', onClick: onPick });
+  const node = el('div', { class: 'card table pickable cat-' + normalizeCategory(def.category), onClick: onPick });
   node.style.setProperty('--owner', '#8b887f');
   const face = el('div', { class: 'card-face' },
     el('div', { class: 'card-titlebar' }, el('span', { class: 'card-title', text: def.title })),

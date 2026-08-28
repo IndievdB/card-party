@@ -5,7 +5,7 @@
 // piles, hands fan out, placed cards sit at slightly crooked angles, and a
 // FLIP pass animates every card sliding across the felt between re-renders.
 
-import { ZONES, ZONE_LABELS, getSeat, findCard, normalizeUpgrade } from './game.js';
+import { ZONES, ZONE_LABELS, getSeat, findCard, normalizeUpgrade, normalizeCategory } from './game.js';
 
 // Upgrade display names come from the sheet's sticker columns: a "Hamburger"
 // sticker makes it the Hamburger upgrade. Fall back to A/B when unstickered.
@@ -128,7 +128,7 @@ export function cardEl(state, ctx, cardId, opts = {}) {
   const size = opts.size || 'mini';
   const interactive = !opts.inert;
   const node = el('div', {
-    class: `card ${size}` + (card.upgrade != null ? ' upgraded' : ''),
+    class: `card ${size} cat-${normalizeCategory(card.category)}` + (card.upgrade != null ? ' upgraded' : ''),
     dataset: interactive ? { cardId } : null,
     draggable: interactive ? 'true' : null,
   });
@@ -418,10 +418,11 @@ function cardModalBody(state, ctx, card) {
 
 function zoneModalBody(state, ctx, seat, zone) {
   const wrap = el('div', { class: 'zone-browser' });
-  // Your own pool doubles as the deck builder: add picked, random, or
-  // drafted cards from the shared library right here.
-  if (zone === 'deck' && seat.playerId === ctx.myId && ctx.poolTools) {
-    wrap.append(ctx.poolTools(), el('hr', { class: 'pool-divider' }));
+  // A pool doubles as the deck builder: your own always, and every pool for
+  // the host, who can edit other players' decks like their own. Added cards
+  // belong to the pool's owner.
+  if (zone === 'deck' && (seat.playerId === ctx.myId || ctx.isHost) && ctx.poolTools) {
+    wrap.append(ctx.poolTools(seat.playerId), el('hr', { class: 'pool-divider' }));
   }
   if (zone === 'deck') {
     wrap.append(el('div', { class: 'zone-note' },
