@@ -593,7 +593,7 @@ function adminModalBody(state, ctx) {
     },
   }));
 
-  // Save/load the whole board for games spanning multiple sessions.
+  // Save/load the whole game for sessions spanning multiple sittings.
   wrap.append(el('h4', { text: 'Save & load' }));
   const fileInput = el('input', { type: 'file', accept: 'application/json,.json', id: 'admin-load-file' });
   fileInput.style.display = 'none';
@@ -601,19 +601,19 @@ function adminModalBody(state, ctx) {
     const file = fileInput.files && fileInput.files[0];
     fileInput.value = '';
     if (!file) return;
-    if (confirm('Load this save? It replaces the whole table — every player, their cards, and zones — with the saved game.')) {
-      ctx.loadBoard?.(file);
+    if (confirm('Load this save? It replaces the whole game — every board, player, card, and zone — with the saved one.')) {
+      ctx.loadGame?.(file);
     }
   });
   wrap.append(el('div', { class: 'admin-saveload' },
     el('button', {
-      class: 'btn', id: 'admin-save-board', text: 'Save board to file',
-      title: 'Download the entire table — players, cards, and where everything is — as a file',
-      onClick: () => ctx.saveBoard?.(),
+      class: 'btn', id: 'admin-save-game', text: 'Save game to file',
+      title: 'Download the entire game — every board and player, every card and where it sits, plus the card list and keywords — as one file',
+      onClick: () => ctx.saveGame?.(),
     }),
     el('button', {
-      class: 'btn', text: 'Load board from file',
-      title: 'Restore a previously saved table; players rejoin to reclaim their seats',
+      class: 'btn', text: 'Load game from file',
+      title: 'Restore a previously saved game; players rejoin to reclaim their boards',
       onClick: () => fileInput.click(),
     }),
     fileInput,
