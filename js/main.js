@@ -78,7 +78,16 @@ function gameCtx() {
     myBoardId: me?.boardId || null,
     isHost: session?.role === 'host',
     // Spectators (or players whose board was taken) start a fresh board.
-    newBoard: () => dispatch({ type: 'newBoard', deck: baseDefs() }),
+    // Wait for the library so the Base cards are known to seed it with.
+    newBoard: async () => {
+      await libraryReady;
+      dispatch({ type: 'newBoard', deck: baseDefs() });
+    },
+    // Host admin: set up an extra open board without leaving your own.
+    addBoard: async (name) => {
+      await libraryReady;
+      dispatch({ type: 'newBoard', deck: baseDefs(), possess: false, name });
+    },
     status: session?.role === 'host' ? 'connected' : clientStatus,
     dispatch,
     kick: (playerId) => {
@@ -184,7 +193,6 @@ async function hostGame({ restore = false } = {}) {
   const host = new HostSession({
     code,
     state,
-    getStarterDeck: baseDefs,
     onChange: (st) => {
       store.set('hostState.' + code, st);
       onState(st);
@@ -229,7 +237,7 @@ async function hostGame({ restore = false } = {}) {
 
 // ---------- joining ----------
 
-function joinGame(codeInput, { spectator = false } = {}) {
+function joinGame(codeInput) {
   if (!peerAvailable()) return toast('PeerJS failed to load — check your connection and refresh.', 'warn');
   const identity = requireName();
   if (!identity) return;
@@ -240,7 +248,6 @@ function joinGame(codeInput, { spectator = false } = {}) {
   const client = new ClientSession({
     code,
     identity,
-    spectator,
     handlers: {
       onState,
       onStatus: (status) => {
@@ -352,10 +359,9 @@ function setBusy(busy) {
 
 function init() {
   document.getElementById('btn-host').addEventListener('click', () => hostGame());
-  const joinOpts = () => ({ spectator: document.getElementById('join-spectator').checked });
-  document.getElementById('btn-join').addEventListener('click', () => joinGame(document.getElementById('join-code').value, joinOpts()));
+  document.getElementById('btn-join').addEventListener('click', () => joinGame(document.getElementById('join-code').value));
   document.getElementById('join-code').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') joinGame(e.target.value, joinOpts());
+    if (e.key === 'Enter') joinGame(e.target.value);
   });
   document.getElementById('player-name').addEventListener('change', (e) => {
     const identity = getIdentity();

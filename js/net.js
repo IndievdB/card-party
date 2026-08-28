@@ -7,7 +7,7 @@
 // zones. The host also persists room state, so a host who closes the tab can
 // restore the room under the same code.
 
-import { applyAction, addPlayer, addBoard, getPlayer, makeCardInstances, shuffle, cleanName, MAX_PLAYERS, MAX_BOARDS } from './game.js';
+import { applyAction, addPlayer, getPlayer, cleanName, MAX_PLAYERS } from './game.js';
 import { store } from './store.js';
 
 const PEER_PREFIX = 'card-party-v1-';
@@ -47,12 +47,11 @@ const HEARTBEAT_MS = 8000;
 const STALE_MS = 30000;
 
 export class HostSession {
-  constructor({ code, state, onChange, onPeerError, getStarterDeck }) {
+  constructor({ code, state, onChange, onPeerError }) {
     this.code = code;
     this.state = state;
     this.onChange = onChange; // (state) => void — persist + render
     this.onPeerError = onPeerError || (() => {});
-    this.getStarterDeck = getStarterDeck || (() => []); // Base cards for new boards
     this.conns = new Map(); // playerId -> DataConnection
     this.peer = null;
     this.destroyed = false;
@@ -134,22 +133,12 @@ export class HostSession {
       }
       player = addPlayer(this.state, { playerId, name });
       // A board they created earlier (left behind on a kick or a loaded
-      // save) that nobody is playing goes back to them. Otherwise a new
-      // player gets a fresh board seeded with the Base cards — unless they
-      // asked to spectate (no board; they can claim one any time).
+      // save) that nobody is playing goes back to them. Otherwise they
+      // arrive without a board and choose at the table: spectate, possess
+      // an open board, or start a new one.
       const orphan = this.state.boards.find((b) =>
         b.createdBy === playerId && !this.state.players.some((p) => p.boardId === b.boardId));
-      if (orphan) {
-        player.boardId = orphan.boardId;
-      } else if (!msg.spectator) {
-        if (this.state.boards.length < MAX_BOARDS) {
-          const board = addBoard(this.state, { name: player.name, createdBy: playerId });
-          board.zones.deck = shuffle(makeCardInstances(this.state, board, this.getStarterDeck()));
-          player.boardId = board.boardId;
-        } else {
-          this._send(conn, { t: 'denied', reason: `All ${MAX_BOARDS} boards are in use — you joined as a spectator.` });
-        }
-      }
+      if (orphan) player.boardId = orphan.boardId;
     }
     // On reconnection the player keeps their current name (which may have
     // been set by the host) and their board, if nobody claimed it.
@@ -279,10 +268,9 @@ export class HostSession {
 }
 
 export class ClientSession {
-  constructor({ code, identity, spectator = false, handlers }) {
+  constructor({ code, identity, handlers }) {
     this.code = code;
     this.identity = identity;
-    this.spectator = !!spectator; // join without a board
     this.h = handlers; // { onState, onStatus, onDenied, onKicked, onFail }
     this.peer = null;
     this.conn = null;
@@ -326,7 +314,7 @@ export class ClientSession {
         clearTimeout(this._connectTimer);
         this.lastSeen = Date.now();
         try {
-          conn.send({ t: 'hello', playerId: this.identity.playerId, name: this.identity.name, spectator: this.spectator });
+          conn.send({ t: 'hello', playerId: this.identity.playerId, name: this.identity.name });
         } catch {}
       });
       conn.on('data', (msg) => { if (live()) this._onMessage(msg); });

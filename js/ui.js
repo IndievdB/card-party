@@ -559,6 +559,16 @@ function adminModalBody(state, ctx) {
       }) : null,
     ));
   }
+  // Set up an extra open board (seeded with the Base cards) without leaving
+  // your own — e.g. prepared for a player who hasn't arrived yet.
+  wrap.append(el('button', {
+    class: 'btn', id: 'admin-add-board', text: 'Add an open board',
+    title: 'Add a board nobody is playing yet — anyone can take it with “Play this board”',
+    onClick: () => {
+      const name = prompt('Name for the new board:', 'Board ' + (state.boards.length + 1));
+      if (name != null && name.trim()) ctx.addBoard?.(name);
+    },
+  }));
 
   wrap.append(el('h4', { text: 'Table' }));
   wrap.append(el('button', {
@@ -652,9 +662,13 @@ export function renderGame(root, state, ctx) {
   if (myBoard) {
     table.append(seatPanel(state, ctx, myBoard, true));
   } else if (me) {
-    // Spectating: no board of your own. Claim an open one above, or start fresh.
+    // No board yet (a new joiner, a spectator, or a player whose board was
+    // taken): choose to keep watching, possess an open board, or start fresh.
+    const openBoards = state.boards.filter((b) => !playerOn(state, b.boardId)?.connected).length;
     table.append(el('div', { class: 'spectator-bar' },
-      el('span', { text: 'You’re watching without a board. Take over an open board above, or ' }),
+      el('span', { text: openBoards
+        ? `You don’t have a board — watch as long as you like, take over an open board with “Play this board”, or `
+        : 'You don’t have a board — watch as long as you like, or ' }),
       el('button', { class: 'btn small primary', id: 'btn-new-board', text: 'Start a new board', onClick: ctx.newBoard }),
     ));
   }

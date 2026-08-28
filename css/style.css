@@ -126,10 +126,6 @@ input::placeholder { color: var(--faint); }
 .wide-btn { width: 100%; }
 .join-row { display: flex; gap: 8px; }
 .join-row input { flex: 1; text-transform: uppercase; letter-spacing: 4px; font-weight: 600; }
-.spectate-row {
-  display: flex; align-items: center; gap: 7px; margin-top: 10px;
-  font-size: .82rem; color: var(--muted); cursor: pointer; user-select: none;
-}
 
 /* ---------- deck builder (in-room modal) ---------- */
 .modal:has(.builder) { max-width: 720px; }

@@ -387,14 +387,20 @@ export function applyAction(state, actorId, action) {
       break;
     }
 
-    // Start a fresh board (seeded with the provided starter cards, i.e. the
-    // Base cards) and possess it. A board you were playing stays on the
-    // table, open for someone else.
+    // Start a fresh board seeded with the provided starter cards (the Base
+    // cards) and possess it — a board you were playing stays on the table,
+    // open for someone else. With possess:false (host only) the board is
+    // added open instead, e.g. an extra board set up in advance.
     case 'newBoard': {
       if (state.boards.length >= MAX_BOARDS) return fail(`All ${MAX_BOARDS} board slots are in use.`);
-      const board = addBoard(state, { name: actor.name, createdBy: actorId });
+      const possess = action.possess !== false;
+      if (!possess && !isHost) return fail('Only the host can add a board without playing it.');
+      const board = addBoard(state, {
+        name: action.name ? cleanName(action.name) : actor.name,
+        createdBy: possess ? actorId : null,
+      });
       board.zones.deck = shuffle(makeCardInstances(state, board, action.deck || []));
-      actor.boardId = board.boardId;
+      if (possess) actor.boardId = board.boardId;
       break;
     }
 
