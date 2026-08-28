@@ -93,8 +93,8 @@ function renderModal() {
   } else if (kind === 'admin') {
     title = 'Host admin';
     body = adminModalBody(modalCtx.state, modalCtx.ctx);
-  } else if (kind === 'loadDeck') {
-    title = 'Load a deck';
+  } else if (kind === 'builder') {
+    title = 'Build your deck';
     body = params.render();
   } else {
     return closeModal();
@@ -125,7 +125,7 @@ function helpBody() {
       el('li', { text: 'If you disconnect, rejoin with the same room code from the same browser and you get your seat and cards back.' }),
       el('li', { text: 'The host can kick/block players, and send every card back to its owner’s deck.' }),
     ),
-    p('Build decks from the Decks screen — the card list can be loaded live from a Google Sheet.'),
+    p('Build your deck right at the table: “Build deck” lets you pick cards from the shared library by hand, add X at random, or draft them — X picks, choosing 1 of 2 or 1 of 3 each time.'),
   );
 }
 
@@ -535,7 +535,7 @@ export function renderGame(root, state, ctx) {
     ),
     el('div', { class: 'game-actions' },
       el('button', { class: 'btn small', text: (me ? me.name : 'Name'), title: 'Rename yourself', onClick: ctx.renameSelf }),
-      el('button', { class: 'btn small', text: 'Load deck', onClick: ctx.openLoadDeck }),
+      el('button', { class: 'btn small', text: 'Build deck', onClick: ctx.openBuilder }),
       ctx.isHost ? el('button', { class: 'btn small', text: 'Admin', onClick: () => openModal('admin') }) : null,
       el('button', { class: 'btn small', text: 'Help', onClick: () => openModal('help') }),
       el('button', { class: 'btn small danger', text: 'Leave', onClick: ctx.leave }),

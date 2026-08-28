@@ -1,14 +1,31 @@
-// App wiring: views, sessions (host/client), and the game context.
+// App wiring: views, sessions (host/client), library loading, and the game context.
 
 import { store, getIdentity, saveIdentity } from './store.js';
-import { newState, addSeat, makeCardInstances, shuffle, cleanName } from './game.js';
+import { newState, addSeat, cleanName } from './game.js';
 import { HostSession, ClientSession, randomCode, normalizeCode, peerAvailable } from './net.js';
 import { renderGame, refreshModal, openModal, closeModal, toast, el } from './ui.js';
-import { initDeckView, getCurrentDeckDefs, getCurrentDeckName, getSavedDecks, randomDeckFromLibrary, getLibrary } from './deckui.js';
+import { loadLibrary } from './sheet.js';
+import { configureBuilder, builderNode } from './builder.js';
 
 let session = null; // HostSession | ClientSession
 let latestState = null;
 let clientStatus = 'connecting';
+let autoOpenedBuilder = false;
+
+// The one shared card library (hardcoded sheet). Loaded at startup.
+let library = [];
+
+async function loadLibraryNow() {
+  try {
+    const { cards, source } = await loadLibrary();
+    library = cards;
+    if (source === 'cache') {
+      toast('Card sheet unreachable — using the last downloaded card list.', 'warn');
+    }
+  } catch (err) {
+    toast('Could not load the card library: ' + (err.message || err), 'warn');
+  }
+}
 
 // "Last room" is remembered per identity, so each tab (= each player) gets
 // its own rejoin/restore offer.
@@ -16,7 +33,7 @@ function lastRoomKey() {
   return 'lastRoom.' + getIdentity().playerId;
 }
 
-const views = ['home', 'decks', 'game'];
+const views = ['home', 'game'];
 
 function showView(name) {
   for (const v of views) {
@@ -68,9 +85,13 @@ function gameCtx() {
       saveIdentity(identity);
       dispatch({ type: 'rename', name: clean });
     },
-    openLoadDeck: () => openModal('loadDeck', { render: renderLoadDeckModal }),
+    openBuilder,
     leave: leaveGame,
   };
+}
+
+function openBuilder() {
+  openModal('builder', { render: builderNode });
 }
 
 function dispatch(action) {
@@ -83,40 +104,23 @@ function onState(state) {
   latestState = state;
   renderGame(document.getElementById('game-root'), state, gameCtx());
   refreshModal();
+
+  // First time at the table with no cards of your own: open the deck builder.
+  if (!autoOpenedBuilder && session) {
+    const myId = getIdentity().playerId;
+    const seated = state.seats.some((s) => s.playerId === myId);
+    const ownsCards = Object.values(state.cards).some((c) => c.ownerId === myId);
+    if (seated && !ownsCards) {
+      autoOpenedBuilder = true;
+      openBuilder();
+    } else if (seated) {
+      autoOpenedBuilder = true; // returning player with cards — don't nag
+    }
+  }
 }
 
 function rerender() {
   if (latestState) onState(latestState);
-}
-
-// ---------- load-deck modal (mid-game deck swap) ----------
-
-function renderLoadDeckModal() {
-  const wrap = el('div', {},
-    el('p', { class: 'hint', text: 'Loading a deck removes every card you own from the table and gives you a fresh shuffled deck. Cards other people put in your zones stay put.' }),
-  );
-  const decks = getSavedDecks();
-  const names = Object.keys(decks);
-  for (const name of names) {
-    wrap.append(el('button', {
-      class: 'btn wide', text: `${name} (${decks[name].cards.length} cards)`,
-      onClick: () => {
-        dispatch({ type: 'resetMyCards', deck: decks[name].cards });
-        closeModal();
-        toast(`Loaded “${name}”`);
-      },
-    }));
-  }
-  if (!names.length) wrap.append(el('p', { class: 'empty', text: 'No saved decks yet — build one on the Decks screen.' }));
-  wrap.append(el('button', {
-    class: 'btn wide', text: `Random 20 from library (${getLibrary().length} cards)`,
-    onClick: () => {
-      dispatch({ type: 'resetMyCards', deck: randomDeckFromLibrary(20) });
-      closeModal();
-      toast('Loaded a random deck');
-    },
-  }));
-  return wrap;
 }
 
 // ---------- hosting ----------
@@ -139,14 +143,10 @@ async function hostGame({ restore = false } = {}) {
     for (const seat of state.seats) {
       seat.connected = seat.playerId === identity.playerId;
     }
-    const mySeat = state.seats.find((s) => s.playerId === identity.playerId);
-    if (mySeat) state.hostPlayerId = identity.playerId;
   } else {
     code = randomCode();
     state = newState(code);
-    const seat = addSeat(state, { playerId: identity.playerId, name: identity.name, isHost: true });
-    const deckDefs = getCurrentDeckDefs();
-    seat.zones.deck = shuffle(makeCardInstances(state, seat, deckDefs));
+    addSeat(state, { playerId: identity.playerId, name: identity.name, isHost: true });
   }
 
   const host = new HostSession({
@@ -188,13 +188,11 @@ async function hostGame({ restore = false } = {}) {
   setBusy(false);
 
   session = host;
+  autoOpenedBuilder = false;
   store.set(lastRoomKey(), { code, role: 'host' });
   store.set('hostState.' + code, state);
   showView('game');
   onState(state);
-  if (!restore && !getCurrentDeckDefs().length) {
-    toast('You joined with an empty deck — use “Load deck” to grab one.', 'warn');
-  }
 }
 
 // ---------- joining ----------
@@ -210,7 +208,7 @@ function joinGame(codeInput) {
   const client = new ClientSession({
     code,
     identity,
-    deck: getCurrentDeckDefs(),
+    deck: [],
     handlers: {
       onState,
       onStatus: (status) => {
@@ -233,6 +231,7 @@ function joinGame(codeInput) {
     },
   });
   session = client;
+  autoOpenedBuilder = false;
   client.connect();
   store.set(lastRoomKey(), { code, role: 'client' });
   showView('game');
@@ -262,6 +261,7 @@ function endSession() {
     session = null;
   }
   latestState = null;
+  autoOpenedBuilder = false;
   closeModal();
   document.getElementById('conn-banner').classList.add('hidden');
 }
@@ -281,13 +281,6 @@ function leaveGame() {
 function renderHome() {
   const identity = getIdentity();
   document.getElementById('player-name').value = identity.name;
-
-  const deckNote = document.getElementById('home-deck-note');
-  const deckName = getCurrentDeckName();
-  const defs = getCurrentDeckDefs();
-  deckNote.textContent = deckName
-    ? `Active deck: “${deckName}” (${defs.length} cards)`
-    : 'No active deck yet — build one, or join and pick a random deck later.';
 
   const last = store.get(lastRoomKey());
   const rejoinBox = document.getElementById('rejoin-box');
@@ -318,7 +311,6 @@ function setBusy(busy) {
 // ---------- boot ----------
 
 function init() {
-  // Navigating away from the table keeps the session alive (browse decks mid-game).
   document.querySelectorAll('[data-nav]').forEach((btn) => {
     btn.addEventListener('click', () => showView(btn.dataset.nav));
   });
@@ -336,11 +328,20 @@ function init() {
   });
 
   window.addEventListener('beforeunload', () => {
-    // Host state is persisted on every change already; just close cleanly.
     if (session) session.destroy();
   });
 
-  initDeckView();
+  configureBuilder({
+    getLibrary: () => library,
+    retryLoad: loadLibraryNow,
+    deal: (defs) => {
+      dispatch({ type: 'resetMyCards', deck: defs });
+      closeModal();
+      toast(`Dealt a fresh deck of ${defs.length} card${defs.length === 1 ? '' : 's'}`);
+    },
+  });
+
+  loadLibraryNow();
   showView('home');
 
   // Keep the game nav tab in sync.
