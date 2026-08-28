@@ -69,9 +69,9 @@ function gameCtx() {
     isHost: session?.role === 'host',
     status: session?.role === 'host' ? 'connected' : clientStatus,
     dispatch,
-    kick: (playerId, block) => {
+    kick: (playerId) => {
       if (session?.role === 'host') {
-        const res = session.kick(playerId, block);
+        const res = session.kick(playerId);
         if (!res.ok) toast(res.reason, 'warn');
       }
     },

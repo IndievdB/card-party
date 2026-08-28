@@ -469,26 +469,12 @@ function adminModalBody(state, ctx) {
       el('span', { class: 'dot ' + (seat.connected ? 'on' : 'off') }),
       el('span', { class: 'admin-name', text: seat.name + (seat.connected ? '' : ' (disconnected)') }),
       el('button', {
-        class: 'btn small warn', text: 'Kick',
-        onClick: () => { if (confirm(`Kick ${seat.name}? Their cards return to their owners; they can rejoin.`)) ctx.kick(seat.playerId, false); },
-      }),
-      el('button', {
-        class: 'btn small danger', text: 'Kick + block',
-        onClick: () => { if (confirm(`Kick and BLOCK ${seat.name}? They cannot rejoin until unblocked.`)) ctx.kick(seat.playerId, true); },
+        class: 'btn small danger', text: 'Kick',
+        onClick: () => { if (confirm(`Kick ${seat.name}? Their cards leave the table; they can rejoin any time.`)) ctx.kick(seat.playerId); },
       }),
     ));
   }
   if (state.seats.length <= 1) wrap.append(el('p', { class: 'empty', text: 'No other players yet.' }));
-
-  if (state.blocked.length) {
-    wrap.append(el('h4', { text: 'Blocked' }));
-    for (const b of state.blocked) {
-      wrap.append(el('div', { class: 'admin-row' },
-        el('span', { class: 'admin-name', text: b.name }),
-        el('button', { class: 'btn small', text: 'Unblock', onClick: () => ctx.dispatch({ type: 'unblock', playerId: b.playerId }) }),
-      ));
-    }
-  }
 
   wrap.append(el('h4', { text: 'Table' }));
   wrap.append(el('button', {

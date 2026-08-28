@@ -124,12 +124,6 @@ export class HostSession {
     const name = cleanName(msg.name);
     if (!playerId) return conn.close();
 
-    if (this.state.blocked.some((b) => b.playerId === playerId)) {
-      this._send(conn, { t: 'denied', fatal: true, reason: 'You have been blocked from this room by the host.' });
-      setTimeout(() => { try { conn.close(); } catch {} }, 300);
-      return;
-    }
-
     let seat = getSeat(this.state, playerId);
     if (!seat) {
       if (this.state.seats.length >= MAX_PLAYERS) {
@@ -209,9 +203,9 @@ export class HostSession {
     return res;
   }
 
-  kick(playerId, block) {
+  kick(playerId) {
     const conn = this.conns.get(playerId);
-    const res = this.dispatch({ type: 'kick', playerId, block });
+    const res = this.dispatch({ type: 'kick', playerId });
     if (res.ok && conn) {
       this._send(conn, { t: 'kicked' });
       setTimeout(() => { try { conn.close(); } catch {} }, 300);

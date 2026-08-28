@@ -2,7 +2,7 @@
 // it, and broadcasts the whole thing to every client after each change.
 //
 // There are no game rules — the honor system reigns. Any player may move any
-// card anywhere; only administrative actions (kick, block, return-all) are
+// card anywhere; only administrative actions (kick, return-all) are
 // restricted to the host.
 
 import { uid } from './store.js';
@@ -30,7 +30,6 @@ export function newState(roomCode) {
     hostPlayerId: null,
     seats: [],       // [{ playerId, name, connected, lastSeen, zones: {deck,hand,discard,delayed} }]
     cards: {},       // instanceId -> card instance
-    blocked: [],     // [{ playerId, name }]
     version: 0,
   };
 }
@@ -225,15 +224,6 @@ export function applyAction(state, actorId, action) {
         if (state.cards[id].ownerId === pid) delete state.cards[id];
       }
       state.seats = state.seats.filter((s) => s !== seat);
-      if (action.block && !state.blocked.some((b) => b.playerId === pid)) {
-        state.blocked.push({ playerId: pid, name: seat.name });
-      }
-      break;
-    }
-
-    case 'unblock': {
-      if (!isHost) return fail('Only the host can do that.');
-      state.blocked = state.blocked.filter((b) => b.playerId !== action.playerId);
       break;
     }
 
