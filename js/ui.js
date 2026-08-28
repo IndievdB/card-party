@@ -943,30 +943,27 @@ function handStripEl(state, ctx, board, isMe) {
 // Energy / block / momentum counters + optional board state (from the
 // sheet's States tab). Honor system like everything else: anyone can
 // adjust any board's numbers.
-function statCtl(ctx, board, key, icon, label) {
-  const set = (value) => ctx.dispatch({ type: 'setStat', boardId: board.boardId, stat: key, value });
-  return el('span', { class: 'stat', title: label },
-    el('span', { class: 'stat-icon', text: icon }),
-    el('button', { class: `btn tiny ${key}-minus`, text: '−', onClick: () => set(board[key] - 1) }),
+function statCtl(ctx, board, key, label) {
+  return el('span', { class: 'stat' },
+    el('span', { class: 'stat-label', text: label }),
     el('button', {
       class: `stat-val ${key}-val`, text: String(board[key]),
-      title: `${label} — click to set an exact value`,
+      title: `Set ${label.toLowerCase()} for ${board.name}`,
       onClick: async () => {
         const v = await uiPrompt(`${label} for ${board.name}`, String(board[key]), 'Set');
         if (v == null || !v.trim()) return;
         const n = Math.round(Number(v));
-        if (Number.isFinite(n)) set(n);
+        if (Number.isFinite(n)) ctx.dispatch({ type: 'setStat', boardId: board.boardId, stat: key, value: n });
       },
     }),
-    el('button', { class: `btn tiny ${key}-plus`, text: '+', onClick: () => set(board[key] + 1) }),
   );
 }
 
 function boardStatsEl(state, ctx, board) {
   const row = el('div', { class: 'board-stats' },
-    statCtl(ctx, board, 'energy', '⚡', 'Energy'),
-    statCtl(ctx, board, 'block', '🛡', 'Block'),
-    statCtl(ctx, board, 'momentum', '💨', 'Momentum'),
+    statCtl(ctx, board, 'energy', 'Energy'),
+    statCtl(ctx, board, 'block', 'Block'),
+    statCtl(ctx, board, 'momentum', 'Momentum'),
   );
 
   const defs = ctx.stateDefs ? ctx.stateDefs() : [];
