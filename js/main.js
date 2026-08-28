@@ -1,7 +1,7 @@
 // App wiring: views, sessions (host/client), library loading, and the game context.
 
 import { store, getIdentity, saveIdentity } from './store.js';
-import { newState, addPlayer, addBoard, getPlayer, migrateState, cleanName, sanitizeLoadedState, makeCardInstances, shuffle, normalizeCategory, ownedTitles } from './game.js';
+import { newState, addPlayer, getPlayer, migrateState, cleanName, sanitizeLoadedState, normalizeCategory, ownedTitles } from './game.js';
 import { HostSession, ClientSession, randomCode, normalizeCode, peerAvailable } from './net.js';
 import { renderGame, refreshModal, openModal, closeModal, toast, el, setKeywordDefs } from './ui.js';
 import { loadLibrary } from './sheet.js';
@@ -181,13 +181,11 @@ async function hostGame({ restore = false } = {}) {
       player.connected = player.playerId === identity.playerId;
     }
   } else {
-    await libraryReady; // so the starter (Base) cards are known
     code = randomCode();
     state = newState(code);
-    const player = addPlayer(state, { playerId: identity.playerId, name: identity.name, isHost: true });
-    const board = addBoard(state, { name: identity.name, createdBy: identity.playerId });
-    board.zones.deck = shuffle(makeCardInstances(state, board, baseDefs()));
-    player.boardId = board.boardId;
+    // The host, like everyone else, arrives boardless and chooses at the
+    // table: spectate, claim an open board, or start their own.
+    addPlayer(state, { playerId: identity.playerId, name: identity.name, isHost: true });
   }
 
   const host = new HostSession({

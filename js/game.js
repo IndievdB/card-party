@@ -324,22 +324,27 @@ export function applyAction(state, actorId, action) {
       break;
     }
 
-    // Rename yourself — or, as the host, any player. The board a player
-    // created follows their name; a board they merely possess keeps its
-    // original identity ("playing as Alice" doesn't rename Alice's board).
+    // Rename yourself — or, as the host, any player. Boards have their own
+    // names (renameBoard); a player renaming themself leaves boards alone.
     case 'rename': {
       const targetId = action.playerId || actorId;
       if (targetId !== actorId && !isHost) return fail('Only the host can rename other players.');
       const target = getPlayer(state, targetId);
       if (!target) return fail('No such player.');
+      target.name = cleanName(action.name);
+      break;
+    }
+
+    // Rename a board — the one you possess, or (host only) any board. The
+    // cards it owns follow the name.
+    case 'renameBoard': {
+      const board = getBoard(state, action.boardId);
+      if (!board) return fail('No such board.');
+      if (board.boardId !== actor.boardId && !isHost) return fail('Only the host can rename another board.');
       const name = cleanName(action.name);
-      target.name = name;
-      const ownBoard = state.boards.find((b) => b.createdBy === targetId);
-      if (ownBoard) {
-        ownBoard.name = name;
-        for (const card of Object.values(state.cards)) {
-          if (card.ownerId === ownBoard.boardId) card.ownerName = name;
-        }
+      board.name = name;
+      for (const card of Object.values(state.cards)) {
+        if (card.ownerId === board.boardId) card.ownerName = name;
       }
       break;
     }

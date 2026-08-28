@@ -455,6 +455,7 @@ input::placeholder { color: var(--faint); }
 .seat-name { font-weight: 600; font-size: .95rem; letter-spacing: -.01em; }
 .seat-sub { font-size: .78rem; color: var(--muted); font-style: italic; }
 .claim-btn { margin-left: auto; }
+.rename-board { padding: 2px 8px; line-height: 1.2; }
 .spectator-bar {
   display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
   margin-top: 14px; padding: 16px 18px;

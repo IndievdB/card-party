@@ -549,6 +549,13 @@ function adminModalBody(state, ctx) {
     wrap.append(el('div', { class: 'admin-row' },
       el('span', { class: 'dot ' + (player?.connected ? 'on' : 'off') }),
       el('span', { class: 'admin-name', text: `${board.name} · ${status}` }),
+      el('button', {
+        class: 'btn small', text: 'Rename',
+        onClick: () => {
+          const name = prompt(`New name for the board “${board.name}”:`, board.name);
+          if (name != null && name.trim()) ctx.dispatch({ type: 'renameBoard', boardId: board.boardId, name });
+        },
+      }),
       board.boardId !== ctx.myBoardId ? el('button', {
         class: 'btn small danger', text: 'Remove board',
         onClick: () => {
@@ -782,11 +789,19 @@ function seatPanel(state, ctx, board, isMe) {
       class: 'dot ' + (online ? 'on' : 'off'),
       title: online ? 'Connected' : (player ? 'Player away' : 'No player on this board'),
     }),
-    el('span', { class: 'seat-name', text: board.name + (isMe ? ' (you)' : '') }),
-    player && player.name !== board.name
-      ? el('span', { class: 'seat-sub', text: `played by ${player.name}` }) : null,
-    !player ? el('span', { class: 'seat-sub', text: 'open board' }) : null,
+    el('span', { class: 'seat-name', text: board.name }),
+    // Board names are their own thing, so always show who's playing it.
+    player
+      ? el('span', { class: 'seat-sub', text: isMe ? 'played by you' : `played by ${player.name}` })
+      : el('span', { class: 'seat-sub', text: 'open board' }),
     player && player.playerId === state.hostPlayerId ? el('span', { class: 'badge', text: 'HOST' }) : null,
+    (isMe || ctx.isHost) ? el('button', {
+      class: 'btn small rename-board', text: '✎', title: 'Rename this board',
+      onClick: () => {
+        const name = prompt('Board name:', board.name);
+        if (name != null && name.trim()) ctx.dispatch({ type: 'renameBoard', boardId: board.boardId, name });
+      },
+    }) : null,
     !isMe && !online ? el('button', {
       class: 'btn small claim-btn', text: 'Play this board',
       title: player
