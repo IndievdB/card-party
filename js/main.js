@@ -24,8 +24,10 @@ async function loadLibraryNow() {
     }
     // The pool modal may already be open showing "library not loaded".
     refreshModal();
+    return source;
   } catch (err) {
     toast('Could not load the card library: ' + (err.message || err), 'warn');
+    return null;
   }
 }
 
@@ -85,6 +87,16 @@ function gameCtx() {
       dispatch({ type: 'rename', name: clean });
     },
     poolTools: poolToolsNode,
+    // Host admin: re-fetch the sheet and refresh the text of every card
+    // already in play — hands and boards stay exactly as they are.
+    reloadSheet: async () => {
+      const source = await loadLibraryNow();
+      if (!library.length) return toast('The card library is empty — nothing to apply.', 'warn');
+      dispatch({ type: 'updateCardTexts', defs: library });
+      if (session?.role === 'host') session.broadcastReload?.();
+      if (source === 'live') toast('Cards reloaded from the sheet — in-play cards updated.');
+      else toast('Sheet unreachable — applied the cached card list to in-play cards.', 'warn');
+    },
     leave: leaveGame,
   };
 }
@@ -217,6 +229,10 @@ function joinGame(codeInput) {
         updateConnBanner();
       },
       onDenied: (reason) => toast(reason, 'warn'),
+      onReloadLibrary: async () => {
+        await loadLibraryNow();
+        toast('Card list refreshed from the sheet.');
+      },
       onKicked: () => {
         endSession();
         store.del(lastRoomKey());

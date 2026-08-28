@@ -199,6 +199,11 @@ export class HostSession {
     return res;
   }
 
+  // Nudge every client to re-fetch the card library from the sheet.
+  broadcastReload() {
+    for (const conn of this.conns.values()) this._send(conn, { t: 'reloadLibrary' });
+  }
+
   kick(playerId) {
     const conn = this.conns.get(playerId);
     const res = this.dispatch({ type: 'kick', playerId });
@@ -299,6 +304,9 @@ export class ClientSession {
         } else {
           this.h.onDenied(msg.reason);
         }
+        break;
+      case 'reloadLibrary':
+        this.h.onReloadLibrary && this.h.onReloadLibrary();
         break;
       case 'kicked':
         this.kicked = true;

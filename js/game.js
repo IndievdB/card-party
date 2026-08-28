@@ -185,6 +185,26 @@ export function applyAction(state, actorId, action) {
       break;
     }
 
+    // Host admin: refresh the printed text of every card already in play from
+    // the latest library, matched by title. Locations, owners, and chosen
+    // upgrades stay exactly as they are — nothing leaves the table.
+    case 'updateCardTexts': {
+      if (!isHost) return fail('Only the host can do that.');
+      const byTitle = new Map();
+      for (const d of action.defs || []) {
+        if (d && d.title && !byTitle.has(String(d.title))) byTitle.set(String(d.title), d);
+      }
+      if (!byTitle.size) return fail('No card definitions to apply.');
+      for (const card of Object.values(state.cards)) {
+        const d = byTitle.get(card.title);
+        if (!d) continue; // card no longer in the sheet — leave it as printed
+        card.description = String(d.description || '').slice(0, 1000);
+        card.keywords = Array.isArray(d.keywords) ? d.keywords.map(String).slice(0, 12) : [];
+        card.upgrades = [normalizeUpgrade(d.upgrades?.[0]), normalizeUpgrade(d.upgrades?.[1])];
+      }
+      break;
+    }
+
     // Host admin: every card returns to its original owner's deck; decks shuffled.
     case 'returnAll': {
       if (!isHost) return fail('Only the host can do that.');

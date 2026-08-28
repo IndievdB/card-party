@@ -485,6 +485,11 @@ function adminModalBody(state, ctx) {
 
   wrap.append(el('h4', { text: 'Table' }));
   wrap.append(el('button', {
+    class: 'btn', id: 'admin-reload-sheet', text: 'Reload cards from the sheet',
+    title: 'Re-fetch the card sheet and update the text of every card in play — nothing leaves anyone’s hand or board',
+    onClick: () => ctx.reloadSheet?.(),
+  }), ' ');
+  wrap.append(el('button', {
     class: 'btn warn', text: 'Return all cards to their owners’ pools',
     onClick: () => {
       if (confirm('Return every card to its original owner’s pool and shuffle?')) {
