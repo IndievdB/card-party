@@ -16,7 +16,6 @@ function normUp(u) {
   return u && typeof u === 'object' ? u : { text: String(u || ''), sticker: '' };
 }
 
-let sel = [];      // chosen card defs
 let target = null; // playerId whose pool the tools act on
 let guide = store.get('spiritGuide', ''); // your chosen spirit guide
 let search = '';
@@ -72,12 +71,12 @@ function startDraft(total, choices) {
 }
 
 function pickOption(def) {
-  sel.push(clone(def));
+  deps.add([clone(def)], target); // each pick goes straight into the pool
   draft.done++;
   if (draft.done >= draft.total) {
     const n = draft.total;
     draft = null;
-    toast(`Draft complete — ${n} card${n === 1 ? '' : 's'} added`);
+    toast(`Draft complete — ${n} card${n === 1 ? '' : 's'} added to the pool`);
   } else {
     draft.options = randomDefs(draft.choices, true);
   }
@@ -89,29 +88,13 @@ function pickOption(def) {
 function build() {
   parts = {};
 
-  parts.count = el('strong', {});
-  parts.dealBtn = el('button', {
-    class: 'btn small primary', id: 'bld-deal',
-    onClick: () => {
-      if (!sel.length) return toast('Pick some cards first.', 'warn');
-      deps.add(sel.map(clone), target);
-      sel = [];
-      update();
-    },
-  });
-  const clearBtn = el('button', {
-    class: 'btn small warn', id: 'bld-clear', text: 'Clear',
-    onClick: () => { sel = []; update(); },
-  });
-
   const randomCount = el('input', { type: 'number', min: '1', max: '60', value: '20', id: 'bld-random-count' });
   const randomBtn = el('button', {
     class: 'btn small', id: 'bld-random-btn', text: 'Add random',
     onClick: () => {
       if (!lib().length) return toast('The card library hasn’t loaded yet.', 'warn');
       const n = Math.max(1, Math.min(60, parseInt(randomCount.value, 10) || 20));
-      sel.push(...randomDefs(n));
-      toast(`Added ${n} random card${n === 1 ? '' : 's'}`);
+      deps.add(randomDefs(n), target);
       update();
     },
   });
@@ -133,21 +116,14 @@ function build() {
     onInput: (e) => { search = e.target.value.toLowerCase(); renderLib(); },
   });
 
-  parts.selWrap = el('div', { class: 'sel-chips' });
   parts.libWrap = el('div', { class: 'card-list builder-lib' });
   parts.libNote = el('div', { class: 'hint', id: 'bld-lib-note' });
 
   parts.mainView = el('div', {},
-    el('div', { class: 'builder-head' },
-      el('span', {}, parts.count, ' picked'),
-      el('span', { class: 'builder-head-actions' }, parts.dealBtn, clearBtn),
-    ),
-    el('p', { class: 'hint', text: 'Picked cards are shuffled into your pool when you add them.' }),
     el('div', { class: 'builder-tools' },
       el('span', { class: 'tool-row' }, randomCount, randomBtn),
       el('span', { class: 'tool-row' }, draftCount, el('span', { class: 'hint', text: 'picks of' }), draftChoices, draftBtn),
     ),
-    parts.selWrap,
     el('div', { class: 'builder-search' }, searchInput, parts.libNote),
     parts.libWrap,
   );
@@ -163,26 +139,7 @@ function update() {
   parts.mainView.classList.toggle('hidden', !!draft);
   parts.draftView.classList.toggle('hidden', !draft);
   if (draft) renderDraft();
-  else {
-    parts.count.textContent = `${sel.length} card${sel.length === 1 ? '' : 's'}`;
-    parts.dealBtn.textContent = `Add to pool (${sel.length})`;
-    renderSel();
-    renderLib();
-  }
-}
-
-function renderSel() {
-  parts.selWrap.replaceChildren();
-  sel.forEach((def, i) => {
-    parts.selWrap.append(el('span', { class: 'sel-chip' },
-      el('span', { text: def.title }),
-      el('button', {
-        class: 'chip-x', title: 'Remove',
-        onClick: () => { sel.splice(i, 1); update(); }, text: '✕',
-      }),
-    ));
-  });
-  if (!sel.length) parts.selWrap.append(el('span', { class: 'empty', text: 'Nothing picked yet — pick from the list, add random, or draft.' }));
+  else renderLib();
 }
 
 function libRow(def) {
@@ -200,7 +157,7 @@ function libRow(def) {
       })(),
     ),
     el('div', { class: 'lib-card-actions' },
-      el('button', { class: 'btn small primary', text: '+ Add', onClick: () => { sel.push(clone(def)); update(); } })),
+      el('button', { class: 'btn small primary', text: '+ Add', onClick: () => deps.add([clone(def)], target) })),
   );
   if (catOf(def) === 'spirit') row.style.setProperty('--sg', guideHue(def.spiritGuide));
   return row;

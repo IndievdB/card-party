@@ -14,17 +14,33 @@ import { store } from './store.js';
 
 export const SHEET_ID = '1ewtANY7m7Xz7ldtYjdbT86BE_VidhynVgb-18YArw18';
 
-function parseGvizText(text) {
-  // Response looks like: /*O_o*/\ngoogle.visualization.Query.setResponse({...});
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end < 0) throw new Error('Unexpected response from Google Sheets.');
-  return JSON.parse(text.slice(start, end + 1));
+// The CSV export returns every cell as plain text. The gviz JSON endpoint
+// types each column and NULLS cells that don't match the majority type (a
+// text title in a mostly-numeric column silently vanishes) — CSV avoids
+// that entirely.
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n') { row.push(field); field = ''; rows.push(row); row = []; }
+    else if (ch !== '\r') field += ch;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows;
 }
 
-function cellText(cell) {
-  if (!cell || cell.v == null) return '';
-  return String(cell.f != null ? cell.f : cell.v).trim();
+function cellAt(row, i) {
+  return i >= 0 && i < row.length ? String(row[i]).trim() : '';
 }
 
 function splitKeywords(text) {
@@ -35,7 +51,7 @@ function splitKeywords(text) {
 }
 
 function tabUrl(tab) {
-  const base = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&headers=1`;
+  const base = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
   return tab ? base + '&sheet=' + encodeURIComponent(tab) : base;
 }
 
@@ -43,24 +59,17 @@ function tabUrl(tab) {
 async function fetchKeywords() {
   const res = await fetch(tabUrl('Keywords'));
   if (!res.ok) throw new Error(`Google Sheets returned ${res.status}.`);
-  const json = parseGvizText(await res.text());
-  if (json.status === 'error') throw new Error('No Keywords tab.');
-  const table = json.table;
-  let labels = (table.cols || []).map((c) => String(c.label || '').trim().toLowerCase());
-  let rows = table.rows || [];
-  if (labels.every((l) => !l) && rows.length) {
-    labels = (rows[0].c || []).map((c) => cellText(c).toLowerCase());
-    rows = rows.slice(1);
-  }
+  const rows = parseCsv(await res.text());
+  if (rows.length < 1) throw new Error('No Keywords tab.');
+  const labels = rows[0].map((l) => String(l).trim().toLowerCase());
   let colKw = labels.findIndex((l) => l.includes('keyword'));
   if (colKw < 0) colKw = 0;
   let colDesc = labels.findIndex((l) => l.includes('desc'));
   if (colDesc < 0) colDesc = 1;
   const map = {};
-  for (const row of rows) {
-    const c = row.c || [];
-    const kw = cellText(c[colKw]).toLowerCase();
-    const desc = cellText(c[colDesc]);
+  for (const row of rows.slice(1)) {
+    const kw = cellAt(row, colKw).toLowerCase();
+    const desc = cellAt(row, colDesc);
     if (kw && desc) map[kw] = desc.slice(0, 500);
   }
   return map;
@@ -69,20 +78,9 @@ async function fetchKeywords() {
 async function fetchLibrary(tab) {
   const res = await fetch(tabUrl(tab));
   if (!res.ok) throw new Error(`Google Sheets returned ${res.status}.`);
-  const json = parseGvizText(await res.text());
-  if (json.status === 'error') {
-    throw new Error('Google Sheets error: ' + (json.errors?.[0]?.detail_message || 'unknown'));
-  }
-
-  const table = json.table;
-  let labels = (table.cols || []).map((c) => String(c.label || '').trim().toLowerCase());
-  let rows = table.rows || [];
-
-  // If gviz didn't detect a header row, the labels are empty and the first row is the header.
-  if (labels.every((l) => !l) && rows.length) {
-    labels = (rows[0].c || []).map((c) => cellText(c).toLowerCase());
-    rows = rows.slice(1);
-  }
+  const rows = parseCsv(await res.text());
+  if (rows.length < 2) throw new Error('The card sheet loaded but contained no cards.');
+  const labels = rows[0].map((l) => String(l).trim().toLowerCase());
 
   const findCol = (pred, fallback) => {
     const i = labels.findIndex(pred);
@@ -101,19 +99,18 @@ async function fetchLibrary(tab) {
   const colGuide = findCol((l) => l.includes('spirit') && !l.includes('categor'), -1);
 
   const cards = [];
-  for (const row of rows) {
-    const c = row.c || [];
-    const title = cellText(c[colTitle]);
+  for (const row of rows.slice(1)) {
+    const title = cellAt(row, colTitle);
     if (!title) continue;
     cards.push({
       title,
-      description: cellText(c[colDesc]),
-      keywords: splitKeywords(cellText(c[colKeywords])),
-      category: colCat >= 0 ? cellText(c[colCat]) : '',
-      spiritGuide: colGuide >= 0 ? cellText(c[colGuide]) : '',
+      description: cellAt(row, colDesc),
+      keywords: splitKeywords(cellAt(row, colKeywords)),
+      category: colCat >= 0 ? cellAt(row, colCat) : '',
+      spiritGuide: colGuide >= 0 ? cellAt(row, colGuide) : '',
       upgrades: [
-        { text: cellText(c[colUp1]), sticker: colSt1 >= 0 ? cellText(c[colSt1]) : '' },
-        { text: cellText(c[colUp2]), sticker: colSt2 >= 0 ? cellText(c[colSt2]) : '' },
+        { text: cellAt(row, colUp1), sticker: colSt1 >= 0 ? cellAt(row, colSt1) : '' },
+        { text: cellAt(row, colUp2), sticker: colSt2 >= 0 ? cellAt(row, colSt2) : '' },
       ],
     });
   }

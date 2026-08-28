@@ -135,14 +135,6 @@ export class HostSession {
       seat = addSeat(this.state, { playerId, name });
       // Every new player starts with the Base cards in their pool.
       seat.zones.deck = shuffle(makeCardInstances(this.state, seat, this.getStarterDeck()));
-    } else if (!Object.values(this.state.cards).some((c) => c.ownerId === playerId)) {
-      // The seat exists but the player owns no cards at all — it predates the
-      // Base starter cards (or they lost everything). Seed them now.
-      const ids = makeCardInstances(this.state, seat, this.getStarterDeck());
-      if (ids.length) {
-        seat.zones.deck.push(...ids);
-        shuffle(seat.zones.deck);
-      }
     }
     // On reconnection the seat keeps its current name (which may have been
     // set by the host) — the in-game rename action is how names change.
