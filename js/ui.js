@@ -608,7 +608,7 @@ function adminModalBody(state, ctx) {
   wrap.append(el('div', { class: 'admin-saveload' },
     el('button', {
       class: 'btn', id: 'admin-save-game', text: 'Save game to file',
-      title: 'Download the entire game — every board and player, every card and where it sits, plus the card list and keywords — as one file',
+      title: 'Download the entire game — every board and player, every card and where it sits — as one file',
       onClick: () => ctx.saveGame?.(),
     }),
     el('button', {

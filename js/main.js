@@ -13,7 +13,6 @@ let clientStatus = 'connecting';
 
 // The one shared card library (hardcoded sheet). Loaded at startup.
 let library = [];
-let keywordDefs = {};
 let libraryReady = Promise.resolve();
 
 // Base cards start in everyone's pool by default.
@@ -25,8 +24,7 @@ async function loadLibraryNow() {
   try {
     const { cards, keywords, source } = await loadLibrary();
     library = cards;
-    keywordDefs = keywords || {};
-    setKeywordDefs(keywordDefs);
+    setKeywordDefs(keywords);
     if (source === 'cache') {
       toast('Card sheet unreachable — using the last downloaded card list.', 'warn');
     }
@@ -127,9 +125,9 @@ function gameCtx() {
       else toast('Sheet unreachable — applied the cached card list to in-play cards.', 'warn');
     },
     // Host admin: save the whole game to a file — every board and player,
-    // every card and where it sits, plus a snapshot of the card library and
-    // keyword definitions so the game is fully self-contained across
-    // sessions even if the sheet changes.
+    // every card and where it sits. The card library isn't part of a save:
+    // it always comes live from the sheet, and it's fine if it has changed
+    // between sessions (in-play cards carry their printed text anyway).
     saveGame: () => {
       if (!latestState) return;
       const save = {
@@ -137,8 +135,6 @@ function gameCtx() {
         kind: 'save',
         savedAt: new Date().toISOString(),
         state: latestState,
-        library,
-        keywords: keywordDefs,
       };
       const blob = new Blob([JSON.stringify(save, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
@@ -152,18 +148,9 @@ function gameCtx() {
       if (session?.role !== 'host') return toast('Only the host can load a game.', 'warn');
       try {
         const raw = JSON.parse(await file.text());
-        // Full save envelope, or a bare state from an older save file.
+        // Save envelope, or a bare state from an older save file.
         const isEnvelope = raw && typeof raw === 'object' && raw.app === 'card-party' && raw.state;
         const cleaned = sanitizeLoadedState(isEnvelope ? raw.state : raw);
-        // The live sheet stays canonical; the save's library snapshot fills
-        // in only when nothing could be loaded at all.
-        if (isEnvelope && !library.length && Array.isArray(raw.library) && raw.library.length) {
-          library = raw.library;
-          keywordDefs = raw.keywords && typeof raw.keywords === 'object' ? raw.keywords : {};
-          setKeywordDefs(keywordDefs);
-          store.set('libraryCache', library);
-          store.set('kwCache', keywordDefs);
-        }
         session.loadState(cleaned);
         closeModal();
         toast('Game loaded — players rejoin to reclaim their seats.');
