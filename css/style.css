@@ -571,6 +571,17 @@ input::placeholder { color: var(--faint); }
   .my-lower { grid-template-columns: 1fr; }
   .my-piles { flex-direction: row; justify-content: center; }
   .pile-actions { flex-direction: row; width: auto; flex-wrap: wrap; }
+
+  /* Hand & Delayed on a phone: every card visible at once in a compact
+     form — title, owner, and category only. Tapping a card opens the
+     full-size face (the card modal), so nothing is lost. */
+  .zone-strip .card:not(.big) { --cw: 86px; --fs: .92; min-height: calc(var(--cw) * 0.9); }
+  .zone-strip .card:not(.big) .card-desc,
+  .zone-strip .card:not(.big) .card-ups,
+  .zone-strip .card:not(.big) .card-keywords { display: none; }
+  .zone-strip .card:not(.big) .card-cat { margin-top: auto; }
+  .seat.me .zone-strip.hand .strip-cards { gap: 6px; }
+  .strip-cards { gap: 6px; }
 }
 
 .connecting { text-align: center; padding: 60px 20px; }
