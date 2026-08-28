@@ -645,8 +645,6 @@ input::placeholder { color: var(--faint); }
 .upgrade-option.selected { border-color: #c9a227; background: #fdf8e7; }
 .upgrade-label { font-weight: 600; font-size: .9rem; white-space: nowrap; }
 .upgrade-desc { color: var(--muted); font-size: .85rem; }
-.quick-moves { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.mover { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: .86rem; color: var(--muted); }
 
 .zone-browser { display: flex; flex-direction: column; gap: 6px; }
 .pool-divider { border: none; border-top: 1px solid var(--border); margin: 12px 0 6px; }

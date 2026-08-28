@@ -548,46 +548,8 @@ function cardModalBody(state, ctx, card) {
   }
   wrap.append(upgradeBox);
 
-  // Quick moves (need a board of your own) + precise mover.
-  const quick = ctx.myBoardId ? el('div', { class: 'quick-moves' },
-    quickBtn('My hand', { boardId: ctx.myBoardId, zone: 'hand' }),
-    quickBtn('My Delayed', { boardId: ctx.myBoardId, zone: 'delayed' }),
-    quickBtn('My discard', { boardId: ctx.myBoardId, zone: 'discard' }),
-    quickBtn('Top of my pool', { boardId: ctx.myBoardId, zone: 'deck', pos: 'top' }),
-  ) : null;
-  function quickBtn(label, to) {
-    return el('button', {
-      class: 'btn small',
-      text: label,
-      onClick: () => { ctx.dispatch({ type: 'moveCard', cardId: card.id, to }); closeModal(); },
-    });
-  }
-
-  const seatSel = el('select', {}, state.boards.map((b) =>
-    el('option', { value: b.boardId, text: b.boardId === ctx.myBoardId ? b.name + ' (you)' : b.name })));
-  const zoneSel = el('select', {}, ZONES.map((z) => el('option', { value: z, text: ZONE_LABELS[z] })));
-  const posSel = el('select', {},
-    el('option', { value: 'top', text: 'Top' }),
-    el('option', { value: 'bottom', text: 'Bottom' }));
-  const syncPos = () => { posSel.style.display = zoneSel.value === 'deck' ? '' : 'none'; };
-  zoneSel.addEventListener('change', syncPos);
-  syncPos();
-
-  const mover = el('div', { class: 'mover' },
-    el('span', { text: 'Move to:' }), seatSel, zoneSel, posSel,
-    el('button', {
-      class: 'btn small primary', text: 'Move',
-      onClick: () => {
-        ctx.dispatch({
-          type: 'moveCard', cardId: card.id,
-          to: { boardId: seatSel.value, zone: zoneSel.value, pos: posSel.value },
-        });
-        closeModal();
-      },
-    }),
-  );
-
-  wrap.append(el('h4', { text: 'Move this card' }), ...(quick ? [quick] : []), mover);
+  // No move controls here — cards move by dragging them (hold to lift on
+  // touch), onto any zone of any board.
   return wrap;
 }
 
