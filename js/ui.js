@@ -142,7 +142,7 @@ function renderModal() {
     const board = getBoard(modalCtx.state, params.boardId);
     if (!board) return closeModal();
     title = `${board.name} — ${ZONE_LABELS[params.zone]} (${board.zones[params.zone].length})`;
-    body = zoneModalBody(modalCtx.state, modalCtx.ctx, board, params.zone);
+    body = zoneModalBody(modalCtx.state, modalCtx.ctx, board, params.zone, params);
   } else if (kind === 'admin') {
     title = 'Host admin';
     body = adminModalBody(modalCtx.state, modalCtx.ctx);
@@ -593,13 +593,25 @@ function cardModalBody(state, ctx, card) {
 
 // ---------- zone modal (browse any pile — everything is public) ----------
 
-function zoneModalBody(state, ctx, board, zone) {
+function zoneModalBody(state, ctx, board, zone, params) {
   const wrap = el('div', { class: 'zone-browser' });
-  // A pool doubles as the deck builder: your own board's always, and every
-  // pool for the host, who can edit any board like their own. Added cards
-  // belong to the pool's board.
-  if (zone === 'deck' && (board.boardId === ctx.myBoardId || ctx.isHost) && ctx.poolTools) {
-    wrap.append(ctx.poolTools(board.boardId), el('hr', { class: 'pool-divider' }));
+  const canEdit = board.boardId === ctx.myBoardId || ctx.isHost;
+
+  // Clicking a pool shows its CARDS. The deck builder (library, random,
+  // draft) only appears when you choose to add cards — your own pool
+  // always, every pool for the host. Added cards belong to the pool's board.
+  if (zone === 'deck' && canEdit && ctx.poolTools && params?.adding) {
+    wrap.append(
+      el('div', { class: 'zone-note' },
+        el('button', {
+          class: 'btn small', id: 'pool-add-done', text: '← Back to the pool',
+          onClick: () => { params.adding = false; refreshModal(); },
+        }),
+        el('span', { text: 'Adding cards to this pool' }),
+      ),
+      ctx.poolTools(board.boardId),
+    );
+    return wrap;
   }
   if (zone === 'deck') {
     wrap.append(el('div', { class: 'zone-note' },
@@ -608,6 +620,11 @@ function zoneModalBody(state, ctx, board, zone) {
         class: 'btn small', text: 'Shuffle',
         onClick: () => { ctx.dispatch({ type: 'shuffle', boardId: board.boardId, zone: 'deck' }); toast('Pool shuffled'); },
       }),
+      canEdit && ctx.poolTools ? el('button', {
+        class: 'btn small primary', id: 'pool-add-cards', text: '+ Add cards',
+        title: 'Open the card library to add cards to this pool',
+        onClick: () => { params.adding = true; refreshModal(); },
+      }) : null,
     ));
   }
   const ids = board.zones[zone];
