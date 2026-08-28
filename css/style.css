@@ -94,6 +94,12 @@ input, select {
   border-radius: 10px; padding: 9px 12px; font-size: .92rem; font-family: var(--sans);
 }
 input:focus, select:focus { outline: 2px solid rgba(28,27,24,.25); outline-offset: 1px; border-color: var(--border-strong); }
+/* iOS Safari zooms the whole page in when focusing an input with a font
+   under 16px — and stays zoomed, so the table renders "too big" right
+   after typing a name/room code. 16px on touch screens prevents it. */
+@media (hover: none), (max-width: 760px) {
+  input, select { font-size: 16px; }
+}
 input::placeholder { color: var(--faint); }
 .field { display: flex; flex-direction: column; gap: 5px; margin: 14px 0; max-width: 340px; }
 .field span { font-size: .78rem; font-weight: 500; color: var(--muted); }
