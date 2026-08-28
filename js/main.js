@@ -166,6 +166,16 @@ async function hostGame({ restore = false } = {}) {
     for (const seat of state.seats) {
       seat.connected = seat.playerId === identity.playerId;
     }
+    // Rooms saved before Base starter cards existed: seed the host if they
+    // own nothing (reconnecting players get the same treatment on hello).
+    await libraryReady;
+    if (!Object.values(state.cards).some((c) => c.ownerId === identity.playerId)) {
+      const mySeat = state.seats.find((s) => s.playerId === identity.playerId);
+      if (mySeat) {
+        mySeat.zones.deck.push(...makeCardInstances(state, mySeat, baseDefs()));
+        shuffle(mySeat.zones.deck);
+      }
+    }
   } else {
     await libraryReady; // so the starter (Base) cards are known
     code = randomCode();

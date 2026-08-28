@@ -336,6 +336,18 @@ input::placeholder { color: var(--faint); }
 
 /* keyword chips with a sheet-defined description are interactive */
 .kw.has-def { cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
+#kw-tip {
+  position: fixed; z-index: 70;
+  pointer-events: none;
+  max-width: 280px;
+  background: var(--text); color: var(--bg);
+  border-radius: 10px; padding: 8px 12px;
+  font-size: .82rem; line-height: 1.45; font-family: var(--sans);
+  box-shadow: var(--shadow-2);
+  opacity: 0; transition: opacity .1s ease;
+}
+#kw-tip.show { opacity: 1; }
+#kw-tip strong { display: block; margin-bottom: 2px; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
 
 /* printed category at the foot of every card */
 .card-cat {

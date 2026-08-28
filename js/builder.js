@@ -208,7 +208,12 @@ function libRow(def) {
 
 function renderLib() {
   const pool = lib();
-  parts.libNote.textContent = pool.length ? `${pool.length} cards in the library` : '';
+  // Per-category counts make sheet problems visible at a glance.
+  const counts = { general: 0, base: 0, death: 0, spirit: 0 };
+  for (const c of pool) counts[catOf(c)]++;
+  parts.libNote.textContent = pool.length
+    ? `${pool.length} cards · ${counts.general} General · ${counts.base} Base · ${counts.death} Death · ${counts.spirit} Spirit`
+    : '';
   parts.libWrap.replaceChildren();
   if (!pool.length) {
     parts.libWrap.append(

@@ -33,8 +33,8 @@ export function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-// Keyword descriptions from the sheet's Keywords tab: hover shows a native
-// tooltip; click/tap shows the description as a toast.
+// Keyword descriptions from the sheet's Keywords tab: hovering a keyword
+// shows a popup that follows the mouse (a tap does the same on touch).
 let KW_DEFS = {};
 export function setKeywordDefs(map) {
   KW_DEFS = map && typeof map === 'object' ? map : {};
@@ -42,14 +42,43 @@ export function setKeywordDefs(map) {
 
 export function kwEl(k) {
   const desc = KW_DEFS[String(k).toLowerCase()];
-  const chip = el('span', { class: 'kw' + (desc ? ' has-def' : ''), text: k, title: desc || null });
+  const chip = el('span', { class: 'kw' + (desc ? ' has-def' : ''), text: k });
   if (desc) {
+    const show = (e) => showKwTip(k, desc, e.clientX, e.clientY);
+    chip.addEventListener('mouseenter', show);
+    chip.addEventListener('mousemove', show); // the popup follows the mouse
+    chip.addEventListener('mouseleave', hideKwTip);
+    // Touch devices have no hover: a tap shows the popup briefly instead.
     chip.addEventListener('click', (e) => {
       e.stopPropagation();
-      toast(k + ' — ' + desc);
+      show(e);
+      clearTimeout(kwTapTimer);
+      kwTapTimer = setTimeout(hideKwTip, 2500);
     });
   }
   return chip;
+}
+
+let kwTapTimer = null;
+
+function showKwTip(k, desc, x, y) {
+  const tip = document.getElementById('kw-tip');
+  if (!tip) return;
+  tip.replaceChildren(el('strong', { text: k }), el('span', { text: desc }));
+  tip.classList.add('show');
+  // Position by the cursor, nudged so it never leaves the viewport.
+  const w = tip.offsetWidth;
+  const h = tip.offsetHeight;
+  let left = x + 14;
+  let top = y + 18;
+  if (left + w > window.innerWidth - 8) left = Math.max(8, x - w - 14);
+  if (top + h > window.innerHeight - 8) top = Math.max(8, y - h - 12);
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+}
+
+export function hideKwTip() {
+  document.getElementById('kw-tip')?.classList.remove('show');
 }
 
 // Deterministic per-card jitter so placed cards look set down by hand and
@@ -97,6 +126,7 @@ function renderModal() {
   const root = document.getElementById('modal-root');
   if (!modal) return root.replaceChildren();
   hidePeek();
+  hideKwTip();
   const { kind, params } = modal;
   let title = '';
   let body = null;
@@ -557,6 +587,7 @@ export function renderGame(root, state, ctx) {
   modalCtx = { state, ctx };
   captureRects(root);
   hidePeek();
+  hideKwTip();
   root.replaceChildren();
 
   const me = getSeat(state, ctx.myId);
