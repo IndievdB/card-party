@@ -322,6 +322,21 @@ input::placeholder { color: var(--faint); }
 .card.cat-spirit .up-line { color: hsl(var(--sg) 25% 42%); }
 .card.cat-spirit .up-star { color: hsl(var(--sg) 45% 48%); }
 
+.card.cat-base {
+  background:
+    var(--noise),
+    linear-gradient(155deg, #f1efe9 0%, #e0dcd0 100%);
+  color: #3a362c;
+}
+.card.cat-base .card-face { border-color: rgba(90,84,68,.4); }
+.card.cat-base .kw { background: #dfdacb; color: #55503f; border-color: rgba(90,84,68,.3); }
+.lib-card.cat-base { border-left: 4px solid #a8a191; background: #f6f5f1; }
+.card.cat-base .card-cat { color: #8a8474; }
+.lib-card.cat-base .lib-cat { color: #8a8474; }
+
+/* keyword chips with a sheet-defined description are interactive */
+.kw.has-def { cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
+
 /* printed category at the foot of every card */
 .card-cat {
   margin-top: 6px;
@@ -349,6 +364,7 @@ input::placeholder { color: var(--faint); }
   text-transform: uppercase; letter-spacing: .08em;
 }
 .lib-section-head select { padding: 4px 8px; font-size: .8rem; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.lib-section-head .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .guide-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 2px rgba(255,255,255,.8), 0 1px 3px rgba(28,27,24,.3); }
 
 /* category cue on library rows */

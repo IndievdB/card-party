@@ -1,4 +1,5 @@
-// The one canonical card library, loaded live from THE Google Sheet.
+// The one canonical card library, loaded live from THE Google Sheet
+// ("Cards" tab), plus keyword descriptions from its "Keywords" tab.
 // The sheet is hardcoded on purpose: players cannot import their own cards
 // or point the app at a different list. The last successful load is cached
 // so the app still works through a network blip.
@@ -33,9 +34,40 @@ function splitKeywords(text) {
     .filter(Boolean);
 }
 
-async function fetchLibrary() {
-  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&headers=1`;
-  const res = await fetch(url);
+function tabUrl(tab) {
+  const base = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&headers=1`;
+  return tab ? base + '&sheet=' + encodeURIComponent(tab) : base;
+}
+
+// Keyword descriptions from the "Keywords" tab (Keyword | Description).
+async function fetchKeywords() {
+  const res = await fetch(tabUrl('Keywords'));
+  if (!res.ok) throw new Error(`Google Sheets returned ${res.status}.`);
+  const json = parseGvizText(await res.text());
+  if (json.status === 'error') throw new Error('No Keywords tab.');
+  const table = json.table;
+  let labels = (table.cols || []).map((c) => String(c.label || '').trim().toLowerCase());
+  let rows = table.rows || [];
+  if (labels.every((l) => !l) && rows.length) {
+    labels = (rows[0].c || []).map((c) => cellText(c).toLowerCase());
+    rows = rows.slice(1);
+  }
+  let colKw = labels.findIndex((l) => l.includes('keyword'));
+  if (colKw < 0) colKw = 0;
+  let colDesc = labels.findIndex((l) => l.includes('desc'));
+  if (colDesc < 0) colDesc = 1;
+  const map = {};
+  for (const row of rows) {
+    const c = row.c || [];
+    const kw = cellText(c[colKw]).toLowerCase();
+    const desc = cellText(c[colDesc]);
+    if (kw && desc) map[kw] = desc.slice(0, 500);
+  }
+  return map;
+}
+
+async function fetchLibrary(tab) {
+  const res = await fetch(tabUrl(tab));
   if (!res.ok) throw new Error(`Google Sheets returned ${res.status}.`);
   const json = parseGvizText(await res.text());
   if (json.status === 'error') {
@@ -89,17 +121,29 @@ async function fetchLibrary() {
   return cards;
 }
 
-// Returns { cards, source: 'live' | 'cache' }. Throws only if the sheet is
-// unreachable AND there is no cached copy.
+// Returns { cards, keywords, source: 'live' | 'cache' }. Throws only if the
+// sheet is unreachable AND there is no cached copy.
 export async function loadLibrary() {
   try {
-    const cards = await fetchLibrary();
+    let cards;
+    try {
+      cards = await fetchLibrary('Cards');
+    } catch {
+      cards = await fetchLibrary(null); // older sheets: single unnamed tab
+    }
     store.set('libraryCache', cards);
-    return { cards, source: 'live' };
+    let keywords;
+    try {
+      keywords = await fetchKeywords();
+      store.set('kwCache', keywords);
+    } catch {
+      keywords = store.get('kwCache', {});
+    }
+    return { cards, keywords, source: 'live' };
   } catch (err) {
     const cached = store.get('libraryCache');
     if (Array.isArray(cached) && cached.length) {
-      return { cards: cached, source: 'cache' };
+      return { cards: cached, keywords: store.get('kwCache', {}), source: 'cache' };
     }
     throw err;
   }

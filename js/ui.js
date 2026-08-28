@@ -33,6 +33,25 @@ export function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+// Keyword descriptions from the sheet's Keywords tab: hover shows a native
+// tooltip; click/tap shows the description as a toast.
+let KW_DEFS = {};
+export function setKeywordDefs(map) {
+  KW_DEFS = map && typeof map === 'object' ? map : {};
+}
+
+export function kwEl(k) {
+  const desc = KW_DEFS[String(k).toLowerCase()];
+  const chip = el('span', { class: 'kw' + (desc ? ' has-def' : ''), text: k, title: desc || null });
+  if (desc) {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toast(k + ' — ' + desc);
+    });
+  }
+  return chip;
+}
+
 // Deterministic per-card jitter so placed cards look set down by hand and
 // keep their exact crooked angle across re-renders.
 function jitterDeg(id, range = 2.4) {
@@ -148,8 +167,7 @@ export function cardEl(state, ctx, cardId, opts = {}) {
   }
 
   if (card.keywords.length) {
-    face.append(el('div', { class: 'card-keywords' },
-      card.keywords.map((k) => el('span', { class: 'kw', text: k }))));
+    face.append(el('div', { class: 'card-keywords' }, card.keywords.map(kwEl)));
   }
   if (card.description) {
     face.append(el('div', { class: 'card-desc', text: card.description }));

@@ -1,9 +1,9 @@
 // App wiring: views, sessions (host/client), library loading, and the game context.
 
 import { store, getIdentity, saveIdentity } from './store.js';
-import { newState, addSeat, cleanName, sanitizeLoadedState } from './game.js';
+import { newState, addSeat, cleanName, sanitizeLoadedState, makeCardInstances, shuffle, normalizeCategory } from './game.js';
 import { HostSession, ClientSession, randomCode, normalizeCode, peerAvailable } from './net.js';
-import { renderGame, refreshModal, openModal, closeModal, toast, el } from './ui.js';
+import { renderGame, refreshModal, openModal, closeModal, toast, el, setKeywordDefs } from './ui.js';
 import { loadLibrary } from './sheet.js';
 import { configureBuilder, poolToolsNode } from './builder.js';
 
@@ -13,11 +13,18 @@ let clientStatus = 'connecting';
 
 // The one shared card library (hardcoded sheet). Loaded at startup.
 let library = [];
+let libraryReady = Promise.resolve();
+
+// Base cards start in everyone's pool by default.
+function baseDefs() {
+  return library.filter((c) => normalizeCategory(c.category) === 'base');
+}
 
 async function loadLibraryNow() {
   try {
-    const { cards, source } = await loadLibrary();
+    const { cards, keywords, source } = await loadLibrary();
     library = cards;
+    setKeywordDefs(keywords);
     if (source === 'cache') {
       toast('Card sheet unreachable — using the last downloaded card list.', 'warn');
     }
@@ -160,14 +167,17 @@ async function hostGame({ restore = false } = {}) {
       seat.connected = seat.playerId === identity.playerId;
     }
   } else {
+    await libraryReady; // so the starter (Base) cards are known
     code = randomCode();
     state = newState(code);
-    addSeat(state, { playerId: identity.playerId, name: identity.name, isHost: true });
+    const seat = addSeat(state, { playerId: identity.playerId, name: identity.name, isHost: true });
+    seat.zones.deck = shuffle(makeCardInstances(state, seat, baseDefs()));
   }
 
   const host = new HostSession({
     code,
     state,
+    getStarterDeck: baseDefs,
     onChange: (st) => {
       store.set('hostState.' + code, st);
       onState(st);
@@ -358,7 +368,7 @@ function init() {
     },
   });
 
-  loadLibraryNow();
+  libraryReady = loadLibraryNow();
   showView('home');
 
   // Invite links (https://<site>/<CODE>) arrive as ?room=CODE via 404.html.

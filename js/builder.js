@@ -6,7 +6,7 @@
 // so the builder keeps ONE persistent root node (inputs and scroll survive)
 // and only re-renders its dynamic parts on its own interactions.
 
-import { el, toast } from './ui.js';
+import { el, toast, kwEl } from './ui.js';
 import { normalizeCategory, categoryLabel, guideHue } from './game.js';
 import { store } from './store.js';
 
@@ -190,7 +190,7 @@ function libRow(def) {
     el('div', { class: 'lib-card-main' },
       el('div', { class: 'lib-title', text: def.title }),
       el('div', { class: 'lib-cat', text: categoryLabel(def) }),
-      def.keywords?.length ? el('div', { class: 'card-keywords' }, def.keywords.map((k) => el('span', { class: 'kw', text: k }))) : null,
+      def.keywords?.length ? el('div', { class: 'card-keywords' }, def.keywords.map(kwEl)) : null,
       el('div', { class: 'lib-desc', text: def.description }),
       (() => {
         const ups = [normUp(def.upgrades?.[0]), normUp(def.upgrades?.[1])];
@@ -220,6 +220,7 @@ function renderLib() {
   const matches = (c) => !search ||
     (c.title + ' ' + c.description + ' ' + (c.keywords || []).join(' ')).toLowerCase().includes(search);
   const general = pool.filter((c) => catOf(c) === 'general' && matches(c));
+  const base = pool.filter((c) => catOf(c) === 'base' && matches(c));
   const death = pool.filter((c) => catOf(c) === 'death' && matches(c));
   const spiritAll = pool.filter((c) => catOf(c) === 'spirit');
   const guides = [...new Set(spiritAll.map((c) => String(c.spiritGuide || '').trim()).filter(Boolean))].sort();
@@ -231,6 +232,13 @@ function renderLib() {
     parts.libWrap.append(el('div', { class: 'lib-section-head', text: 'General' }));
     if (!general.length) parts.libWrap.append(el('p', { class: 'empty', text: 'No cards match.' }));
     for (const def of general) parts.libWrap.append(libRow(def));
+  }
+
+  // Base — everyone starts with these; extra copies can still be added.
+  if (base.length) {
+    parts.libWrap.append(el('div', { class: 'lib-section-head' }, 'Base',
+      el('span', { class: 'hint', text: 'in every pool by default' })));
+    for (const def of base) parts.libWrap.append(libRow(def));
   }
 
   // Death
@@ -286,7 +294,7 @@ function defCard(def, onPick) {
   node.style.setProperty('--owner', '#8b887f');
   const face = el('div', { class: 'card-face' },
     el('div', { class: 'card-titlebar' }, el('span', { class: 'card-title', text: def.title })),
-    def.keywords?.length ? el('div', { class: 'card-keywords' }, def.keywords.map((k) => el('span', { class: 'kw', text: k }))) : null,
+    def.keywords?.length ? el('div', { class: 'card-keywords' }, def.keywords.map(kwEl)) : null,
     def.description ? el('div', { class: 'card-desc', text: def.description }) : null,
     (() => {
       const ups = [normUp(def.upgrades?.[0]), normUp(def.upgrades?.[1])];

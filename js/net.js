@@ -47,11 +47,12 @@ const HEARTBEAT_MS = 8000;
 const STALE_MS = 30000;
 
 export class HostSession {
-  constructor({ code, state, onChange, onPeerError }) {
+  constructor({ code, state, onChange, onPeerError, getStarterDeck }) {
     this.code = code;
     this.state = state;
     this.onChange = onChange; // (state) => void — persist + render
     this.onPeerError = onPeerError || (() => {});
+    this.getStarterDeck = getStarterDeck || (() => []); // Base cards for new seats
     this.conns = new Map(); // playerId -> DataConnection
     this.peer = null;
     this.destroyed = false;
@@ -132,7 +133,8 @@ export class HostSession {
         return;
       }
       seat = addSeat(this.state, { playerId, name });
-      seat.zones.deck = shuffle(makeCardInstances(this.state, seat, msg.deck || []));
+      // Every new player starts with the Base cards in their pool.
+      seat.zones.deck = shuffle(makeCardInstances(this.state, seat, this.getStarterDeck()));
     }
     // On reconnection the seat keeps its current name (which may have been
     // set by the host) — the in-game rename action is how names change.

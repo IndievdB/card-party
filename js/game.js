@@ -26,6 +26,7 @@ export function normalizeCategory(c) {
   const s = String(c || '').toLowerCase();
   if (s.includes('death')) return 'death';
   if (s.includes('spirit')) return 'spirit';
+  if (s.includes('base')) return 'base';
   return 'general';
 }
 
@@ -46,6 +47,7 @@ export function categoryLabel(card) {
   const cat = normalizeCategory(card.category);
   if (cat === 'death') return 'Death';
   if (cat === 'spirit') return 'Spirit Guide' + (card.spiritGuide ? ' · ' + card.spiritGuide : '');
+  if (cat === 'base') return 'Base';
   return 'General';
 }
 
