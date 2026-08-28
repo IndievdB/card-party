@@ -7,7 +7,8 @@
 // and only re-renders its dynamic parts on its own interactions.
 
 import { el, toast } from './ui.js';
-import { normalizeCategory } from './game.js';
+import { normalizeCategory, categoryLabel } from './game.js';
+import { store } from './store.js';
 
 let deps = { getLibrary: () => [], retryLoad: () => {}, add: () => {} };
 
@@ -17,6 +18,7 @@ function normUp(u) {
 
 let sel = [];      // chosen card defs
 let target = null; // playerId whose pool the tools act on
+let guide = store.get('spiritGuide', ''); // your chosen spirit guide
 let search = '';
 let draft = null;  // { total, done, choices, options: [defs] }
 let root = null;
@@ -41,8 +43,12 @@ function clone(def) {
   return structuredClone(def);
 }
 
+function catOf(def) {
+  return normalizeCategory(def.category);
+}
+
 function randomDefs(n, distinct = false) {
-  const pool = lib();
+  const pool = lib().filter((c) => catOf(c) === 'general');
   if (!pool.length) return [];
   if (!distinct) {
     return Array.from({ length: n }, () => clone(pool[Math.floor(Math.random() * pool.length)]));
@@ -59,6 +65,8 @@ function randomDefs(n, distinct = false) {
 
 function startDraft(total, choices) {
   if (!lib().length) return toast('The card library hasn’t loaded yet.', 'warn');
+  // draft pool is General cards
+
   draft = { total, done: 0, choices, options: randomDefs(choices, true) };
   update();
 }
@@ -177,6 +185,25 @@ function renderSel() {
   if (!sel.length) parts.selWrap.append(el('span', { class: 'empty', text: 'Nothing picked yet — pick from the list, add random, or draft.' }));
 }
 
+function libRow(def) {
+  return el('div', { class: 'lib-card cat-' + catOf(def) },
+    el('div', { class: 'lib-card-main' },
+      el('div', { class: 'lib-title', text: def.title }),
+      el('div', { class: 'lib-cat', text: categoryLabel(def) }),
+      def.keywords?.length ? el('div', { class: 'card-keywords' }, def.keywords.map((k) => el('span', { class: 'kw', text: k }))) : null,
+      el('div', { class: 'lib-desc', text: def.description }),
+      (() => {
+        const ups = [normUp(def.upgrades?.[0]), normUp(def.upgrades?.[1])];
+        if (!ups[0].text && !ups[1].text) return null;
+        return el('div', { class: 'lib-upgrades' },
+          ups.map((u, i) => u.text ? el('div', { text: '★' + (u.sticker || (i === 0 ? 'A' : 'B')) + ': ' + u.text }) : null));
+      })(),
+    ),
+    el('div', { class: 'lib-card-actions' },
+      el('button', { class: 'btn small primary', text: '+ Add', onClick: () => { sel.push(clone(def)); update(); } })),
+  );
+}
+
 function renderLib() {
   const pool = lib();
   parts.libNote.textContent = pool.length ? `${pool.length} cards in the library` : '';
@@ -188,27 +215,49 @@ function renderLib() {
     );
     return;
   }
-  const cards = pool.filter((c) => {
-    if (!search) return true;
-    return (c.title + ' ' + c.description + ' ' + (c.keywords || []).join(' ')).toLowerCase().includes(search);
-  });
-  if (!cards.length) parts.libWrap.append(el('p', { class: 'empty', text: 'No cards match.' }));
-  for (const def of cards) {
-    parts.libWrap.append(el('div', { class: 'lib-card cat-' + normalizeCategory(def.category) },
-      el('div', { class: 'lib-card-main' },
-        el('div', { class: 'lib-title', text: def.title }),
-        def.keywords?.length ? el('div', { class: 'card-keywords' }, def.keywords.map((k) => el('span', { class: 'kw', text: k }))) : null,
-        el('div', { class: 'lib-desc', text: def.description }),
-        (() => {
-          const ups = [normUp(def.upgrades?.[0]), normUp(def.upgrades?.[1])];
-          if (!ups[0].text && !ups[1].text) return null;
-          return el('div', { class: 'lib-upgrades' },
-            ups.map((u, i) => u.text ? el('div', { text: '★' + (u.sticker || (i === 0 ? 'A' : 'B')) + ': ' + u.text }) : null));
-        })(),
-      ),
-      el('div', { class: 'lib-card-actions' },
-        el('button', { class: 'btn small primary', text: '+ Add', onClick: () => { sel.push(clone(def)); update(); } })),
-    ));
+  const matches = (c) => !search ||
+    (c.title + ' ' + c.description + ' ' + (c.keywords || []).join(' ')).toLowerCase().includes(search);
+  const general = pool.filter((c) => catOf(c) === 'general' && matches(c));
+  const death = pool.filter((c) => catOf(c) === 'death' && matches(c));
+  const spiritAll = pool.filter((c) => catOf(c) === 'spirit');
+  const guides = [...new Set(spiritAll.map((c) => String(c.spiritGuide || '').trim()).filter(Boolean))].sort();
+  if (guide && !guides.includes(guide)) guide = '';
+  const spirit = spiritAll.filter((c) => matches(c) && guide && String(c.spiritGuide || '').trim() === guide);
+
+  // General
+  if (general.length || search) {
+    parts.libWrap.append(el('div', { class: 'lib-section-head', text: 'General' }));
+    if (!general.length) parts.libWrap.append(el('p', { class: 'empty', text: 'No cards match.' }));
+    for (const def of general) parts.libWrap.append(libRow(def));
+  }
+
+  // Death
+  if (death.length) {
+    parts.libWrap.append(el('div', { class: 'lib-section-head', text: 'Death' }));
+    for (const def of death) parts.libWrap.append(libRow(def));
+  }
+
+  // Spirit Guide — pick your guide before its cards can be added.
+  if (spiritAll.length) {
+    const guideSel = el('select', { id: 'bld-guide' },
+      el('option', { value: '', text: '— select your spirit guide —' }),
+      guides.map((g) => {
+        const opt = el('option', { value: g, text: g });
+        if (g === guide) opt.selected = true;
+        return opt;
+      }));
+    guideSel.addEventListener('change', () => {
+      guide = guideSel.value;
+      store.set('spiritGuide', guide);
+      renderLib();
+    });
+    parts.libWrap.append(el('div', { class: 'lib-section-head' }, 'Spirit Guide', guideSel));
+    if (!guide) {
+      parts.libWrap.append(el('p', { class: 'empty', text: 'Select your spirit guide to see and add its cards.' }));
+    } else {
+      if (!spirit.length) parts.libWrap.append(el('p', { class: 'empty', text: 'No cards match.' }));
+      for (const def of spirit) parts.libWrap.append(libRow(def));
+    }
   }
 }
 
@@ -246,6 +295,7 @@ function defCard(def, onPick) {
           : null));
     })(),
   );
+  face.append(el('div', { class: 'card-cat', text: categoryLabel(def) }));
   node.append(face);
   return node;
 }

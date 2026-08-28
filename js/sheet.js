@@ -65,6 +65,8 @@ async function fetchLibrary() {
   const colSt1 = findCol((l) => l.includes('sticker') && /(1|a|one|left)\b/.test(l), -1);
   const colSt2 = findCol((l, i) => l.includes('sticker') && i !== colSt1, -1);
   const colCat = findCol((l) => l.includes('categor'), -1);
+  // "Spirit Guide" column: which spirit guide a Spirit Guide card belongs to.
+  const colGuide = findCol((l) => l.includes('spirit') && !l.includes('categor'), -1);
 
   const cards = [];
   for (const row of rows) {
@@ -76,6 +78,7 @@ async function fetchLibrary() {
       description: cellText(c[colDesc]),
       keywords: splitKeywords(cellText(c[colKeywords])),
       category: colCat >= 0 ? cellText(c[colCat]) : '',
+      spiritGuide: colGuide >= 0 ? cellText(c[colGuide]) : '',
       upgrades: [
         { text: cellText(c[colUp1]), sticker: colSt1 >= 0 ? cellText(c[colSt1]) : '' },
         { text: cellText(c[colUp2]), sticker: colSt2 >= 0 ? cellText(c[colSt2]) : '' },

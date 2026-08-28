@@ -29,6 +29,14 @@ export function normalizeCategory(c) {
   return 'general';
 }
 
+// Printed name of a card's category, including which spirit guide it serves.
+export function categoryLabel(card) {
+  const cat = normalizeCategory(card.category);
+  if (cat === 'death') return 'Death';
+  if (cat === 'spirit') return 'Spirit Guide' + (card.spiritGuide ? ' · ' + card.spiritGuide : '');
+  return 'General';
+}
+
 export const MAX_PLAYERS = 10;
 export const MAX_NAME = 24;
 
@@ -76,6 +84,7 @@ export function makeCardInstances(state, seat, defs) {
       description: String(d.description || '').slice(0, 1000),
       keywords: Array.isArray(d.keywords) ? d.keywords.map(String).slice(0, 12) : [],
       category: normalizeCategory(d.category),
+      spiritGuide: String(d.spiritGuide || '').slice(0, 60),
       upgrades: [normalizeUpgrade(d.upgrades?.[0]), normalizeUpgrade(d.upgrades?.[1])],
       upgrade: null, // null | 0 | 1 — which upgrade option is selected
       ownerId: seat.playerId, // original owner, never changes

@@ -5,7 +5,7 @@
 // piles, hands fan out, placed cards sit at slightly crooked angles, and a
 // FLIP pass animates every card sliding across the felt between re-renders.
 
-import { ZONES, ZONE_LABELS, getSeat, findCard, normalizeUpgrade, normalizeCategory } from './game.js';
+import { ZONES, ZONE_LABELS, getSeat, findCard, normalizeUpgrade, normalizeCategory, categoryLabel } from './game.js';
 
 // Upgrade display names come from the sheet's sticker columns: a "Hamburger"
 // sticker makes it the Hamburger upgrade. Fall back to A/B when unstickered.
@@ -163,6 +163,8 @@ export function cardEl(state, ctx, cardId, opts = {}) {
             el('span', { text: ups[i].text }))
         : null)));
   }
+  // The category is printed at the foot of every card.
+  face.append(el('div', { class: 'card-cat', text: categoryLabel(card) }));
   node.append(face);
   if (card.upgrade != null && size !== 'big') {
     node.append(el('div', { class: 'card-upgrade-tag', text: '★' + upgradeInfo(card, card.upgrade).name }));
