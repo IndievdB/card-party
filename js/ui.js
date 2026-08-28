@@ -469,6 +469,13 @@ function adminModalBody(state, ctx) {
       el('span', { class: 'dot ' + (seat.connected ? 'on' : 'off') }),
       el('span', { class: 'admin-name', text: seat.name + (seat.connected ? '' : ' (disconnected)') }),
       el('button', {
+        class: 'btn small', text: 'Rename',
+        onClick: () => {
+          const name = prompt(`New name for ${seat.name}:`, seat.name);
+          if (name != null && name.trim()) ctx.dispatch({ type: 'rename', playerId: seat.playerId, name });
+        },
+      }),
+      el('button', {
         class: 'btn small danger', text: 'Kick',
         onClick: () => { if (confirm(`Kick ${seat.name}? Their cards leave the table; they can rejoin any time.`)) ctx.kick(seat.playerId); },
       }),

@@ -133,13 +133,9 @@ export class HostSession {
       }
       seat = addSeat(this.state, { playerId, name });
       seat.zones.deck = shuffle(makeCardInstances(this.state, seat, msg.deck || []));
-    } else {
-      // Reconnection: the seat, cards and zones are exactly as they left them.
-      seat.name = name;
-      for (const card of Object.values(this.state.cards)) {
-        if (card.ownerId === playerId) card.ownerName = name;
-      }
     }
+    // On reconnection the seat keeps its current name (which may have been
+    // set by the host) — the in-game rename action is how names change.
     seat.connected = true;
     seat.lastSeen = Date.now();
 

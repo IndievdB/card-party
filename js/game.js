@@ -147,11 +147,16 @@ export function applyAction(state, actorId, action) {
       break;
     }
 
+    // Rename yourself — or, as the host, any player.
     case 'rename': {
+      const targetId = action.playerId || actorId;
+      if (targetId !== actorId && !isHost) return fail('Only the host can rename other players.');
+      const target = getSeat(state, targetId);
+      if (!target) return fail('No such player.');
       const name = cleanName(action.name);
-      actor.name = name;
+      target.name = name;
       for (const card of Object.values(state.cards)) {
-        if (card.ownerId === actorId) card.ownerName = name;
+        if (card.ownerId === targetId) card.ownerName = name;
       }
       break;
     }
