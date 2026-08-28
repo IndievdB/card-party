@@ -5,7 +5,7 @@ import { newState, addSeat, cleanName } from './game.js';
 import { HostSession, ClientSession, randomCode, normalizeCode, peerAvailable } from './net.js';
 import { renderGame, refreshModal, openModal, closeModal, toast, el } from './ui.js';
 import { loadLibrary } from './sheet.js';
-import { configureBuilder, builderNode } from './builder.js';
+import { configureBuilder, poolToolsNode } from './builder.js';
 
 let session = null; // HostSession | ClientSession
 let latestState = null;
@@ -22,6 +22,8 @@ async function loadLibraryNow() {
     if (source === 'cache') {
       toast('Card sheet unreachable — using the last downloaded card list.', 'warn');
     }
+    // The pool modal may already be open showing "library not loaded".
+    refreshModal();
   } catch (err) {
     toast('Could not load the card library: ' + (err.message || err), 'warn');
   }
@@ -39,9 +41,6 @@ function showView(name) {
   for (const v of views) {
     document.getElementById('view-' + v).classList.toggle('hidden', v !== name);
   }
-  document.querySelectorAll('[data-nav]').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.nav === name);
-  });
   if (name === 'home') renderHome();
 }
 
@@ -85,13 +84,13 @@ function gameCtx() {
       saveIdentity(identity);
       dispatch({ type: 'rename', name: clean });
     },
-    openBuilder,
+    poolTools: poolToolsNode,
     leave: leaveGame,
   };
 }
 
-function openBuilder() {
-  openModal('builder', { render: builderNode });
+function openMyPool() {
+  openModal('zone', { playerId: getIdentity().playerId, zone: 'deck' });
 }
 
 function dispatch(action) {
@@ -105,14 +104,15 @@ function onState(state) {
   renderGame(document.getElementById('game-root'), state, gameCtx());
   refreshModal();
 
-  // First time at the table with no cards of your own: open the deck builder.
+  // First time at the table with no cards of your own: open your pool, which
+  // carries the tools for adding cards to it.
   if (!autoOpenedBuilder && session) {
     const myId = getIdentity().playerId;
     const seated = state.seats.some((s) => s.playerId === myId);
     const ownsCards = Object.values(state.cards).some((c) => c.ownerId === myId);
     if (seated && !ownsCards) {
       autoOpenedBuilder = true;
-      openBuilder();
+      openMyPool();
     } else if (seated) {
       autoOpenedBuilder = true; // returning player with cards — don't nag
     }
@@ -285,22 +285,28 @@ function renderHome() {
   const last = store.get(lastRoomKey());
   const rejoinBox = document.getElementById('rejoin-box');
   rejoinBox.replaceChildren();
+  let offered = false;
   if (last?.code) {
     if (last.role === 'client') {
       rejoinBox.append(el('button', {
-        class: 'btn wide', text: `Rejoin room ${last.code} — your seat and cards are waiting`,
+        class: 'btn big-btn wide-btn', text: `Rejoin room ${last.code}`,
+        title: 'Your seat and cards are waiting',
         onClick: () => joinGame(last.code),
       }));
+      offered = true;
     } else {
       const saved = store.get('hostState.' + last.code);
       if (saved && saved.hostPlayerId === identity.playerId) {
         rejoinBox.append(el('button', {
-          class: 'btn wide', text: `Restore your room ${last.code} as host`,
+          class: 'btn big-btn wide-btn', text: `Restore room ${last.code}`,
+          title: 'Reopen your room as host — players reconnect automatically',
           onClick: () => hostGame({ restore: true }),
         }));
+        offered = true;
       }
     }
   }
+  if (!offered) rejoinBox.append(el('p', { class: 'hint', text: 'No recent room.' }));
 }
 
 function setBusy(busy) {
@@ -311,11 +317,6 @@ function setBusy(busy) {
 // ---------- boot ----------
 
 function init() {
-  document.querySelectorAll('[data-nav]').forEach((btn) => {
-    btn.addEventListener('click', () => showView(btn.dataset.nav));
-  });
-  document.getElementById('nav-game').classList.add('hidden');
-
   document.getElementById('btn-host').addEventListener('click', () => hostGame());
   document.getElementById('btn-join').addEventListener('click', () => joinGame(document.getElementById('join-code').value));
   document.getElementById('join-code').addEventListener('keydown', (e) => {
@@ -334,20 +335,30 @@ function init() {
   configureBuilder({
     getLibrary: () => library,
     retryLoad: loadLibraryNow,
-    deal: (defs) => {
-      dispatch({ type: 'resetMyCards', deck: defs });
-      closeModal();
-      toast(`Dealt a fresh deck of ${defs.length} card${defs.length === 1 ? '' : 's'}`);
+    add: (defs) => {
+      dispatch({ type: 'addCards', deck: defs });
+      toast(`Shuffled ${defs.length} card${defs.length === 1 ? '' : 's'} into your pool`);
     },
   });
 
   loadLibraryNow();
   showView('home');
 
-  // Keep the game nav tab in sync.
-  setInterval(() => {
-    document.getElementById('nav-game').classList.toggle('hidden', !session);
-  }, 500);
+  // Invite links (https://<site>/<CODE>) arrive as ?room=CODE via 404.html.
+  const roomParam = new URLSearchParams(location.search).get('room');
+  if (roomParam) {
+    history.replaceState({}, '', location.pathname);
+    const code = normalizeCode(roomParam);
+    if (code.length >= 4) {
+      if (getIdentity().name) {
+        joinGame(code);
+      } else {
+        document.getElementById('join-code').value = code;
+        document.getElementById('player-name').focus();
+        toast(`Pick a name, then hit Join to enter room ${code}`);
+      }
+    }
+  }
 }
 
 init();

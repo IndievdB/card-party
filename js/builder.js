@@ -1,6 +1,6 @@
-// In-room deck builder. The card pool is the one shared library (the
-// hardcoded sheet) — players choose which of those cards go in their deck:
-// hand-picked, X random, or a draft of X picks from 2-3 choices each.
+// Pool tools, embedded at the top of your own pool's browser: add cards to
+// your pool from the one shared library (the hardcoded sheet) — hand-picked,
+// X random, or a draft of X picks from 2-3 choices each.
 //
 // The modal system re-invokes the render function on every state broadcast,
 // so the builder keeps ONE persistent root node (inputs and scroll survive)
@@ -8,7 +8,11 @@
 
 import { el, toast } from './ui.js';
 
-let deps = { getLibrary: () => [], retryLoad: () => {}, deal: () => {} };
+let deps = { getLibrary: () => [], retryLoad: () => {}, add: () => {} };
+
+function normUp(u) {
+  return u && typeof u === 'object' ? u : { text: String(u || ''), sticker: '' };
+}
 
 let sel = [];      // chosen card defs
 let search = '';
@@ -20,7 +24,7 @@ export function configureBuilder(d) {
   deps = d;
 }
 
-export function builderNode() {
+export function poolToolsNode() {
   if (!root) build();
   update();
   return root;
@@ -79,7 +83,9 @@ function build() {
     class: 'btn small primary', id: 'bld-deal',
     onClick: () => {
       if (!sel.length) return toast('Pick some cards first.', 'warn');
-      deps.deal(sel.map(clone));
+      deps.add(sel.map(clone));
+      sel = [];
+      update();
     },
   });
   const clearBtn = el('button', {
@@ -122,10 +128,10 @@ function build() {
 
   parts.mainView = el('div', {},
     el('div', { class: 'builder-head' },
-      el('span', {}, parts.count, ' in your next deck'),
+      el('span', {}, parts.count, ' picked'),
       el('span', { class: 'builder-head-actions' }, parts.dealBtn, clearBtn),
     ),
-    el('p', { class: 'hint', text: 'Dealing replaces every card you own on the table with this deck, shuffled. Cards other players put in your zones stay put.' }),
+    el('p', { class: 'hint', text: 'Picked cards are shuffled into your pool when you add them.' }),
     el('div', { class: 'builder-tools' },
       el('span', { class: 'tool-row' }, randomCount, randomBtn),
       el('span', { class: 'tool-row' }, draftCount, el('span', { class: 'hint', text: 'picks of' }), draftChoices, draftBtn),
@@ -148,7 +154,7 @@ function update() {
   if (draft) renderDraft();
   else {
     parts.count.textContent = `${sel.length} card${sel.length === 1 ? '' : 's'}`;
-    parts.dealBtn.textContent = `Deal this deck (${sel.length})`;
+    parts.dealBtn.textContent = `Add to pool (${sel.length})`;
     renderSel();
     renderLib();
   }
@@ -165,7 +171,7 @@ function renderSel() {
       }),
     ));
   });
-  if (!sel.length) parts.selWrap.append(el('span', { class: 'empty', text: 'No cards picked yet — add some below, at random, or draft.' }));
+  if (!sel.length) parts.selWrap.append(el('span', { class: 'empty', text: 'Nothing picked yet — pick from the list, add random, or draft.' }));
 }
 
 function renderLib() {
@@ -190,11 +196,12 @@ function renderLib() {
         el('div', { class: 'lib-title', text: def.title }),
         def.keywords?.length ? el('div', { class: 'card-keywords' }, def.keywords.map((k) => el('span', { class: 'kw', text: k }))) : null,
         el('div', { class: 'lib-desc', text: def.description }),
-        (def.upgrades?.[0] || def.upgrades?.[1])
-          ? el('div', { class: 'lib-upgrades' },
-              def.upgrades[0] ? el('div', { text: '★A: ' + def.upgrades[0] }) : null,
-              def.upgrades[1] ? el('div', { text: '★B: ' + def.upgrades[1] }) : null)
-          : null,
+        (() => {
+          const ups = [normUp(def.upgrades?.[0]), normUp(def.upgrades?.[1])];
+          if (!ups[0].text && !ups[1].text) return null;
+          return el('div', { class: 'lib-upgrades' },
+            ups.map((u, i) => u.text ? el('div', { text: '★' + (u.sticker || (i === 0 ? 'A' : 'B')) + ': ' + u.text }) : null));
+        })(),
       ),
       el('div', { class: 'lib-card-actions' },
         el('button', { class: 'btn small primary', text: '+ Add', onClick: () => { sel.push(clone(def)); update(); } })),
@@ -225,14 +232,16 @@ function defCard(def, onPick) {
     el('div', { class: 'card-titlebar' }, el('span', { class: 'card-title', text: def.title })),
     def.keywords?.length ? el('div', { class: 'card-keywords' }, def.keywords.map((k) => el('span', { class: 'kw', text: k }))) : null,
     def.description ? el('div', { class: 'card-desc', text: def.description }) : null,
-    (def.upgrades?.[0] || def.upgrades?.[1])
-      ? el('div', { class: 'card-ups' },
-          [0, 1].map((i) => def.upgrades[i]
-            ? el('div', { class: 'up-line' },
-                el('span', { class: 'up-star', text: '★' + (i === 0 ? 'A' : 'B') }),
-                el('span', { text: def.upgrades[i] }))
-            : null))
-      : null,
+    (() => {
+      const ups = [normUp(def.upgrades?.[0]), normUp(def.upgrades?.[1])];
+      if (!ups[0].text && !ups[1].text) return null;
+      return el('div', { class: 'card-ups' },
+        ups.map((u, i) => u.text
+          ? el('div', { class: 'up-line' },
+              el('span', { class: 'up-star', text: '★' + (u.sticker || (i === 0 ? 'A' : 'B')) }),
+              el('span', { text: u.text }))
+          : null));
+    })(),
   );
   node.append(face);
   return node;

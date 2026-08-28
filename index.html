@@ -3,21 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Card Party — P2P Tabletop</title>
+  <title>Card Party</title>
   <meta name="description" content="A peer-to-peer tabletop card game. No server, no rules — just cards, friends, and the honor system." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🂡</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231c1b18'/%3E%3Cg transform='rotate(8 44 33)'%3E%3Crect x='31' y='13' width='24' height='36' rx='4' fill='%232f7d4f'/%3E%3Crect x='34.5' y='16.5' width='17' height='29' rx='2.5' fill='none' stroke='%23ffffff' stroke-opacity='.45' stroke-width='2'/%3E%3C/g%3E%3Cg transform='rotate(-9 24 34)'%3E%3Crect x='11' y='13' width='26' height='38' rx='4' fill='%23f7f1e2'/%3E%3Cline x1='16' y1='22' x2='32' y2='22' stroke='%23b0532a' stroke-width='3.5' stroke-linecap='round'/%3E%3Cline x1='16' y1='30' x2='28' y2='30' stroke='%23c4baa2' stroke-width='2.5' stroke-linecap='round'/%3E%3Cline x1='16' y1='36' x2='30' y2='36' stroke='%23c4baa2' stroke-width='2.5' stroke-linecap='round'/%3E%3Cline x1='16' y1='42' x2='26' y2='42' stroke='%23c4baa2' stroke-width='2.5' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E" />
 </head>
 <body>
   <header class="app-header">
     <div class="brand">Card Party</div>
-    <nav>
-      <button class="nav-btn" data-nav="home">Home</button>
-      <button class="nav-btn" data-nav="game" id="nav-game">Table</button>
-    </nav>
   </header>
 
   <div id="conn-banner" class="conn-banner hidden">⚠ Connection lost — reconnecting… your seat and cards are safe.</div>
@@ -25,24 +21,29 @@
   <main>
     <!-- ============ HOME ============ -->
     <section id="view-home" class="view">
-      <div class="panel hero">
-        <h1>Play cards with up to 10 friends, peer-to-peer.</h1>
-        <p class="hint">No server, no accounts, no rules — everything is public and the honor system is the only referee.</p>
-
+      <div class="hero">
         <label class="field">
           <span>Your name</span>
           <input id="player-name" maxlength="24" placeholder="e.g. Robin" autocomplete="nickname" />
         </label>
 
-        <div class="home-actions">
-          <button id="btn-host" class="btn primary big-btn">Host a new room</button>
-          <div class="join-row">
-            <input id="join-code" placeholder="ROOM CODE" maxlength="8" autocapitalize="characters" autocomplete="off" spellcheck="false" />
-            <button id="btn-join" class="btn big-btn">Join</button>
+        <div class="home-options">
+          <div class="option">
+            <h2>Host</h2>
+            <button id="btn-host" class="btn primary big-btn wide-btn">Host a new room</button>
+          </div>
+          <div class="option">
+            <h2>Join</h2>
+            <div class="join-row">
+              <input id="join-code" placeholder="ROOM CODE" maxlength="8" autocapitalize="characters" autocomplete="off" spellcheck="false" />
+              <button id="btn-join" class="btn big-btn">Join</button>
+            </div>
+          </div>
+          <div class="option">
+            <h2>Rejoin</h2>
+            <div id="rejoin-box"></div>
           </div>
         </div>
-
-        <div id="rejoin-box"></div>
       </div>
     </section>
 

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Card Party</title>
+  <script>
+    // Invite links look like https://<site>/<ROOM CODE>. GitHub Pages serves
+    // this 404 page for them; bounce to the app with the code as a query.
+    (function () {
+      var parts = location.pathname.split('/').filter(Boolean);
+      var code = parts.pop() || '';
+      var base = '/' + parts.join('/') + (parts.length ? '/' : '');
+      location.replace(base + '?room=' + encodeURIComponent(code));
+    })();
+  </script>
+</head>
+<body></body>
+</html>

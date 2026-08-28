@@ -5,7 +5,14 @@
 // piles, hands fan out, placed cards sit at slightly crooked angles, and a
 // FLIP pass animates every card sliding across the felt between re-renders.
 
-import { ZONES, ZONE_LABELS, getSeat, findCard } from './game.js';
+import { ZONES, ZONE_LABELS, getSeat, findCard, normalizeUpgrade } from './game.js';
+
+// Upgrade display names come from the sheet's sticker columns: a "Hamburger"
+// sticker makes it the Hamburger upgrade. Fall back to A/B when unstickered.
+function upgradeInfo(card, i) {
+  const u = normalizeUpgrade(card.upgrades?.[i]);
+  return { ...u, name: u.sticker || (i === 0 ? 'A' : 'B'), longName: u.sticker || 'Option ' + (i === 0 ? 'A' : 'B') };
+}
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -75,10 +82,7 @@ function renderModal() {
   let title = '';
   let body = null;
 
-  if (kind === 'help') {
-    title = 'How Card Party works';
-    body = helpBody();
-  } else if (!modalCtx) {
+  if (!modalCtx) {
     return root.replaceChildren();
   } else if (kind === 'card') {
     const card = modalCtx.state.cards[params.cardId];
@@ -93,9 +97,6 @@ function renderModal() {
   } else if (kind === 'admin') {
     title = 'Host admin';
     body = adminModalBody(modalCtx.state, modalCtx.ctx);
-  } else if (kind === 'builder') {
-    title = 'Build your deck';
-    body = params.render();
   } else {
     return closeModal();
   }
@@ -110,23 +111,6 @@ function renderModal() {
     ),
   );
   root.replaceChildren(overlay);
-}
-
-function helpBody() {
-  const p = (t) => el('p', { text: t });
-  return el('div', {},
-    p('Card Party is a rules-free shared tabletop. Everything is public and anything goes — the honor system is the only referee.'),
-    el('ul', {},
-      el('li', { text: 'Each player has a Deck, a Hand, a Discard pile, and a Delayed space. All four are visible to everyone.' }),
-      el('li', { text: 'Drag the top card off a deck to draw it (or use the Draw button). Drag any card onto any zone — yours or another player’s.' }),
-      el('li', { text: 'Click a card to pick it up — choose an upgrade option or move it precisely (e.g. bottom of a deck).' }),
-      el('li', { text: 'Click any pile to look through it — decks are public too.' }),
-      el('li', { text: 'A card’s back and seal are colored by its original owner; it never forgets whose it is.' }),
-      el('li', { text: 'If you disconnect, rejoin with the same room code from the same browser and you get your seat and cards back.' }),
-      el('li', { text: 'The host can kick/block players, and send every card back to its owner’s deck.' }),
-    ),
-    p('Build your deck right at the table: “Build deck” lets you pick cards from the shared library by hand, add X at random, or draft them — X picks, choosing 1 of 2 or 1 of 3 each time.'),
-  );
 }
 
 // ---------- shared card rendering ----------
@@ -153,7 +137,6 @@ export function cardEl(state, ctx, cardId, opts = {}) {
   const face = el('div', { class: 'card-face' });
   face.append(el('div', { class: 'card-titlebar' },
     el('span', { class: 'card-title', text: card.title }),
-    el('span', { class: 'card-seal', title: 'Owner: ' + card.ownerName }),
   ));
 
   const foreign = opts.zoneOwnerId && opts.zoneOwnerId !== card.ownerId;
@@ -171,17 +154,18 @@ export function cardEl(state, ctx, cardId, opts = {}) {
 
   // Every card prints its full text, upgrade options included — like the
   // physical card would. The chosen upgrade is gilded.
-  if (card.upgrades[0] || card.upgrades[1]) {
+  const ups = [upgradeInfo(card, 0), upgradeInfo(card, 1)];
+  if (ups[0].text || ups[1].text) {
     face.append(el('div', { class: 'card-ups' },
-      [0, 1].map((i) => card.upgrades[i]
+      [0, 1].map((i) => ups[i].text
         ? el('div', { class: 'up-line' + (card.upgrade === i ? ' sel' : '') },
-            el('span', { class: 'up-star', text: '★' + (i === 0 ? 'A' : 'B') }),
-            el('span', { text: card.upgrades[i] }))
+            el('span', { class: 'up-star', text: '★' + ups[i].name }),
+            el('span', { text: ups[i].text }))
         : null)));
   }
   node.append(face);
   if (card.upgrade != null && size !== 'big') {
-    node.append(el('div', { class: 'card-upgrade-tag', text: '★' + (card.upgrade === 0 ? 'A' : 'B') }));
+    node.append(el('div', { class: 'card-upgrade-tag', text: '★' + upgradeInfo(card, card.upgrade).name }));
   }
 
   if (interactive) {
@@ -364,12 +348,14 @@ function cardModalBody(state, ctx, card) {
     loc ? ` · currently in ${loc.seat.name}’s ${ZONE_LABELS[loc.zone].toLowerCase()}` : '',
   ));
 
-  // Upgrade options — exactly one may be selected (or none).
+  // Upgrade options — exactly one may be selected (or none). Named by sticker.
+  const upA = upgradeInfo(card, 0);
+  const upB = upgradeInfo(card, 1);
   const upgradeBox = el('div', { class: 'upgrade-box' }, el('h4', { text: 'Upgrade' }));
   const options = [
     { choice: null, label: 'Not upgraded', desc: '' },
-    { choice: 0, label: 'Option A', desc: card.upgrades[0] || '(blank)' },
-    { choice: 1, label: 'Option B', desc: card.upgrades[1] || '(blank)' },
+    { choice: 0, label: upA.longName, desc: upA.text || '(blank)' },
+    { choice: 1, label: upB.longName, desc: upB.text || '(blank)' },
   ];
   for (const opt of options) {
     const input = el('input', {
@@ -390,7 +376,7 @@ function cardModalBody(state, ctx, card) {
     quickBtn('My hand', { playerId: ctx.myId, zone: 'hand' }),
     quickBtn('My Delayed', { playerId: ctx.myId, zone: 'delayed' }),
     quickBtn('My discard', { playerId: ctx.myId, zone: 'discard' }),
-    quickBtn('Top of my deck', { playerId: ctx.myId, zone: 'deck', pos: 'top' }),
+    quickBtn('Top of my pool', { playerId: ctx.myId, zone: 'deck', pos: 'top' }),
   );
   function quickBtn(label, to) {
     return el('button', {
@@ -432,12 +418,17 @@ function cardModalBody(state, ctx, card) {
 
 function zoneModalBody(state, ctx, seat, zone) {
   const wrap = el('div', { class: 'zone-browser' });
+  // Your own pool doubles as the deck builder: add picked, random, or
+  // drafted cards from the shared library right here.
+  if (zone === 'deck' && seat.playerId === ctx.myId && ctx.poolTools) {
+    wrap.append(ctx.poolTools(), el('hr', { class: 'pool-divider' }));
+  }
   if (zone === 'deck') {
     wrap.append(el('div', { class: 'zone-note' },
       el('span', { text: 'Top card first. ' }),
       el('button', {
         class: 'btn small', text: 'Shuffle',
-        onClick: () => { ctx.dispatch({ type: 'shuffle', playerId: seat.playerId, zone: 'deck' }); toast('Deck shuffled'); },
+        onClick: () => { ctx.dispatch({ type: 'shuffle', playerId: seat.playerId, zone: 'deck' }); toast('Pool shuffled'); },
       }),
     ));
   }
@@ -501,9 +492,9 @@ function adminModalBody(state, ctx) {
 
   wrap.append(el('h4', { text: 'Table' }));
   wrap.append(el('button', {
-    class: 'btn warn', text: 'Return all cards to their owners’ decks',
+    class: 'btn warn', text: 'Return all cards to their owners’ pools',
     onClick: () => {
-      if (confirm('Return every card to its original owner’s deck and shuffle?')) {
+      if (confirm('Return every card to its original owner’s pool and shuffle?')) {
         ctx.dispatch({ type: 'returnAll' });
         toast('All cards returned home');
       }
@@ -524,20 +515,24 @@ export function renderGame(root, state, ctx) {
   const others = state.seats.filter((s) => s.playerId !== ctx.myId);
 
   // Top bar
+  // Invite link: https://<site>/<room code> — the 404 redirect turns it back
+  // into ?room=<code> for auto-joining.
+  const inviteLink = () => {
+    const dir = location.pathname.endsWith('/') ? location.pathname : location.pathname.replace(/[^/]*$/, '');
+    return location.origin + dir + state.roomCode;
+  };
   root.append(el('div', { class: 'game-topbar' },
     el('div', { class: 'room-info' },
       el('button', {
-        class: 'room-code', title: 'Click to copy room code',
-        onClick: () => { navigator.clipboard?.writeText(state.roomCode).then(() => toast('Room code copied')); },
+        class: 'room-code', title: 'Copy an invite link others can click to join',
+        onClick: () => { navigator.clipboard?.writeText(inviteLink()).then(() => toast('Invite link copied')); },
       }, 'Room ', el('strong', { text: state.roomCode }), ' ⧉'),
       el('span', { class: 'pill ' + ctx.status, text: statusLabel(ctx) }),
       el('span', { class: 'pill', text: `${state.seats.length}/10 players` }),
     ),
     el('div', { class: 'game-actions' },
       el('button', { class: 'btn small', text: (me ? me.name : 'Name'), title: 'Rename yourself', onClick: ctx.renameSelf }),
-      el('button', { class: 'btn small', text: 'Build deck', onClick: ctx.openBuilder }),
       ctx.isHost ? el('button', { class: 'btn small', text: 'Admin', onClick: () => openModal('admin') }) : null,
-      el('button', { class: 'btn small', text: 'Help', onClick: () => openModal('help') }),
       el('button', { class: 'btn small danger', text: 'Leave', onClick: ctx.leave }),
     ),
   ));
@@ -545,12 +540,6 @@ export function renderGame(root, state, ctx) {
   const table = el('div', { class: 'table' });
   const grid = el('div', { class: 'others-grid' });
   for (const seat of others) grid.append(seatPanel(state, ctx, seat, false));
-  if (!others.length) {
-    grid.append(el('div', { class: 'waiting-note' },
-      el('p', { text: 'No one else is at the table yet. Share the room code:' }),
-      el('p', { class: 'big-code', text: state.roomCode }),
-    ));
-  }
   table.append(grid);
   if (me) table.append(seatPanel(state, ctx, me, true));
   root.append(table);
@@ -568,7 +557,7 @@ function pileKey(seat, zone) {
   return seat.playerId + ':' + zone;
 }
 
-// Deck: a stack of owner-colored card backs, thickness tracking the count.
+// The pool: a stack of owner-colored card backs, thickness tracking the count.
 function deckPileEl(state, ctx, seat, isMe) {
   const count = seat.zones.deck.length;
   const layers = Math.max(count > 0 ? 1 : 0, Math.min(4, Math.ceil(count / 6)));
@@ -585,7 +574,9 @@ function deckPileEl(state, ctx, seat, isMe) {
     class: 'pile deck' + (isMe ? ' mine' : ''),
     dataset: { pile: pileKey(seat, 'deck') },
     draggable: count ? 'true' : null,
-    title: 'Click to look through the deck (decks are public) · drag off the top card to draw it',
+    title: isMe
+      ? 'Click to look through your pool and add cards to it · drag off the top card to draw it'
+      : 'Click to look through the pool (pools are public) · drag off the top card to draw it',
     onClick: () => openModal('zone', { playerId: seat.playerId, zone: 'deck' }),
     // Dragging the pile picks up its top card — drop it anywhere to draw it there.
     onDragstart: (e) => {
@@ -594,7 +585,7 @@ function deckPileEl(state, ctx, seat, isMe) {
       e.dataTransfer.setData('text/plain', top);
       e.dataTransfer.effectAllowed = 'move';
     },
-  }, stack, el('div', { class: 'pile-count', text: String(count) }), el('div', { class: 'pile-tag', text: 'Deck' }));
+  }, stack, el('div', { class: 'pile-count', text: String(count) }), el('div', { class: 'pile-tag', text: 'Pool' }));
   return makeDropTarget(pile, ctx, seat.playerId, 'deck');
 }
 

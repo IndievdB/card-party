@@ -7,8 +7,19 @@
 
 import { uid } from './store.js';
 
+// The zone key stays 'deck' in the protocol; players see it as their "pool".
 export const ZONES = ['deck', 'hand', 'discard', 'delayed'];
-export const ZONE_LABELS = { deck: 'Deck', hand: 'Hand', discard: 'Discard', delayed: 'Delayed' };
+export const ZONE_LABELS = { deck: 'Pool', hand: 'Hand', discard: 'Discard', delayed: 'Delayed' };
+
+// Upgrades are { text, sticker } — the sticker names the upgrade (a
+// "Hamburger" sticker makes it the Hamburger upgrade). Older saved states
+// and defs may still carry plain strings.
+export function normalizeUpgrade(u) {
+  if (u && typeof u === 'object') {
+    return { text: String(u.text || '').slice(0, 1000), sticker: String(u.sticker || '').slice(0, 40) };
+  }
+  return { text: String(u || '').slice(0, 1000), sticker: '' };
+}
 export const MAX_PLAYERS = 10;
 export const MAX_NAME = 24;
 
@@ -56,7 +67,7 @@ export function makeCardInstances(state, seat, defs) {
       title: String(d.title).slice(0, 80),
       description: String(d.description || '').slice(0, 1000),
       keywords: Array.isArray(d.keywords) ? d.keywords.map(String).slice(0, 12) : [],
-      upgrades: [String(d.upgrades?.[0] || '').slice(0, 1000), String(d.upgrades?.[1] || '').slice(0, 1000)],
+      upgrades: [normalizeUpgrade(d.upgrades?.[0]), normalizeUpgrade(d.upgrades?.[1])],
       upgrade: null, // null | 0 | 1 — which upgrade option is selected
       ownerId: seat.playerId, // original owner, never changes
       ownerName: seat.name,
@@ -143,6 +154,15 @@ export function applyAction(state, actorId, action) {
       for (const card of Object.values(state.cards)) {
         if (card.ownerId === actorId) card.ownerName = name;
       }
+      break;
+    }
+
+    // Shuffle newly chosen cards into the actor's pool.
+    case 'addCards': {
+      const ids = makeCardInstances(state, actor, action.deck || []);
+      if (!ids.length) return fail('No cards to add.');
+      actor.zones.deck.push(...ids);
+      shuffle(actor.zones.deck);
       break;
     }
 

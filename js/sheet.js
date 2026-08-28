@@ -4,8 +4,10 @@
 // so the app still works through a network blip.
 //
 // Expected columns (header names matched loosely, order doesn't matter):
-//   Title | Description | Keywords | Upgrade 1 | Upgrade 2
+//   Title | Description | Keywords | Upgrade 1 | Upgrade 1 Sticker | Upgrade 2 | Upgrade 2 Sticker
 // Keywords are comma/semicolon separated (e.g. "Delayed, Shuffle").
+// The sticker names the upgrade: a "Hamburger" sticker makes it the
+// Hamburger upgrade rather than "option A".
 
 import { store } from './store.js';
 
@@ -57,8 +59,11 @@ async function fetchLibrary() {
   const colTitle = findCol((l) => l.includes('title') || l === 'name' || l.includes('card name'), 0);
   const colDesc = findCol((l) => l.includes('desc') && !l.includes('upgrade'), 1);
   const colKeywords = findCol((l) => l.includes('keyword') || l.includes('tag'), 2);
-  const colUp1 = findCol((l) => l.includes('upgrade') && /(1|a|one|left)\b/.test(l), 3);
-  const colUp2 = findCol((l, i) => l.includes('upgrade') && i !== colUp1, 4);
+  const isUpgradeText = (l) => l.includes('upgrade') && !l.includes('sticker');
+  const colUp1 = findCol((l) => isUpgradeText(l) && /(1|a|one|left)\b/.test(l), 3);
+  const colUp2 = findCol((l, i) => isUpgradeText(l) && i !== colUp1, 4);
+  const colSt1 = findCol((l) => l.includes('sticker') && /(1|a|one|left)\b/.test(l), -1);
+  const colSt2 = findCol((l, i) => l.includes('sticker') && i !== colSt1, -1);
 
   const cards = [];
   for (const row of rows) {
@@ -69,7 +74,10 @@ async function fetchLibrary() {
       title,
       description: cellText(c[colDesc]),
       keywords: splitKeywords(cellText(c[colKeywords])),
-      upgrades: [cellText(c[colUp1]), cellText(c[colUp2])],
+      upgrades: [
+        { text: cellText(c[colUp1]), sticker: colSt1 >= 0 ? cellText(c[colSt1]) : '' },
+        { text: cellText(c[colUp2]), sticker: colSt2 >= 0 ? cellText(c[colSt2]) : '' },
+      ],
     });
   }
   if (!cards.length) throw new Error('The card sheet loaded but contained no cards.');
