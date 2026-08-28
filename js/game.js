@@ -104,11 +104,15 @@ export function addPlayer(state, { playerId, name, isHost = false }) {
   return player;
 }
 
+export const DEFAULT_ENERGY = 40;
+
 export function addBoard(state, { boardId, name, createdBy = null }) {
   const board = {
     boardId: boardId || uid('b'),
     name: cleanName(name),
     createdBy,
+    energy: DEFAULT_ENERGY,
+    state: '', // optional board state, from the sheet's States tab
     zones: { deck: [], hand: [], discard: [], delayed: [] },
   };
   state.boards.push(board);
@@ -119,22 +123,29 @@ export function addBoard(state, { boardId, name, createdBy = null }) {
 // each seat becomes a board (reusing playerId as boardId, so card ownerIds
 // still match) possessed by a player of the same identity.
 export function migrateState(state) {
-  if (!state || typeof state !== 'object' || !Array.isArray(state.seats)) return state;
-  state.players = state.seats.map((s) => ({
-    playerId: s.playerId,
-    name: s.name,
-    connected: !!s.connected,
-    lastSeen: s.lastSeen || 0,
-    boardId: s.playerId,
-  }));
-  state.boards = state.seats.map((s) => ({
-    boardId: s.playerId,
-    name: s.name,
-    createdBy: s.playerId,
-    zones: s.zones,
-  }));
-  delete state.seats;
-  state.schema = 2;
+  if (!state || typeof state !== 'object') return state;
+  if (Array.isArray(state.seats)) {
+    state.players = state.seats.map((s) => ({
+      playerId: s.playerId,
+      name: s.name,
+      connected: !!s.connected,
+      lastSeen: s.lastSeen || 0,
+      boardId: s.playerId,
+    }));
+    state.boards = state.seats.map((s) => ({
+      boardId: s.playerId,
+      name: s.name,
+      createdBy: s.playerId,
+      zones: s.zones,
+    }));
+    delete state.seats;
+    state.schema = 2;
+  }
+  // Boards stored before energy/state existed get the defaults.
+  for (const b of state.boards || []) {
+    if (!Number.isFinite(b.energy)) b.energy = DEFAULT_ENERGY;
+    if (typeof b.state !== 'string') b.state = '';
+  }
   return state;
 }
 
@@ -242,6 +253,8 @@ export function sanitizeLoadedState(rawIn) {
       boardId: String(b.boardId),
       name: cleanName(b.name),
       createdBy: b.createdBy ? String(b.createdBy) : null,
+      energy: Number.isFinite(Number(b.energy)) ? Math.max(-9999, Math.min(9999, Math.round(Number(b.energy)))) : DEFAULT_ENERGY,
+      state: typeof b.state === 'string' ? b.state.slice(0, 60) : '',
       zones: { deck: [], hand: [], discard: [], delayed: [] },
     };
     for (const zone of ZONES) {
@@ -313,6 +326,24 @@ export function applyAction(state, actorId, action) {
       if (!target) return fail('No such board.');
       const zone = ZONES.includes(action.zone) ? action.zone : 'deck';
       shuffle(target.zones[zone]);
+      break;
+    }
+
+    // Anyone may adjust any board's energy — same honor system as cards.
+    case 'setEnergy': {
+      const board = getBoard(state, action.boardId);
+      if (!board) return fail('No such board.');
+      const n = Math.round(Number(action.energy));
+      if (!Number.isFinite(n)) return fail('Energy must be a number.');
+      board.energy = Math.max(-9999, Math.min(9999, n));
+      break;
+    }
+
+    // A board's optional state, from the sheet's States tab (or '' = none).
+    case 'setBoardState': {
+      const board = getBoard(state, action.boardId);
+      if (!board) return fail('No such board.');
+      board.state = String(action.state || '').slice(0, 60);
       break;
     }
 

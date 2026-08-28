@@ -55,6 +55,25 @@ function tabUrl(tab) {
   return tab ? base + '&sheet=' + encodeURIComponent(tab) : base;
 }
 
+// Board states from the "States" tab (State | Description), in sheet order.
+async function fetchStates() {
+  const res = await fetch(tabUrl('States'));
+  if (!res.ok) throw new Error(`Google Sheets returned ${res.status}.`);
+  const rows = parseCsv(await res.text());
+  if (rows.length < 1) throw new Error('No States tab.');
+  const labels = rows[0].map((l) => String(l).trim().toLowerCase());
+  let colState = labels.findIndex((l) => l.includes('state'));
+  if (colState < 0) colState = 0;
+  let colDesc = labels.findIndex((l) => l.includes('desc'));
+  if (colDesc < 0) colDesc = 1;
+  const states = [];
+  for (const row of rows.slice(1)) {
+    const name = cellAt(row, colState);
+    if (name) states.push({ name: name.slice(0, 60), desc: cellAt(row, colDesc).slice(0, 500) });
+  }
+  return states;
+}
+
 // Keyword descriptions from the "Keywords" tab (Keyword | Description).
 async function fetchKeywords() {
   const res = await fetch(tabUrl('Keywords'));
@@ -118,8 +137,8 @@ async function fetchLibrary(tab) {
   return cards;
 }
 
-// Returns { cards, keywords, source: 'live' | 'cache' }. Throws only if the
-// sheet is unreachable AND there is no cached copy.
+// Returns { cards, keywords, states, source: 'live' | 'cache' }. Throws only
+// if the sheet is unreachable AND there is no cached copy.
 export async function loadLibrary() {
   try {
     let cards;
@@ -136,11 +155,18 @@ export async function loadLibrary() {
     } catch {
       keywords = store.get('kwCache', {});
     }
-    return { cards, keywords, source: 'live' };
+    let states;
+    try {
+      states = await fetchStates();
+      store.set('stateCache', states);
+    } catch {
+      states = store.get('stateCache', []);
+    }
+    return { cards, keywords, states, source: 'live' };
   } catch (err) {
     const cached = store.get('libraryCache');
     if (Array.isArray(cached) && cached.length) {
-      return { cards: cached, keywords: store.get('kwCache', {}), source: 'cache' };
+      return { cards: cached, keywords: store.get('kwCache', {}), states: store.get('stateCache', []), source: 'cache' };
     }
     throw err;
   }

@@ -880,6 +880,53 @@ function handStripEl(state, ctx, board, isMe) {
   return makeDropTarget(strip, ctx, board.boardId, 'hand');
 }
 
+// Energy counter + optional board state (from the sheet's States tab).
+// Honor system like everything else: anyone can adjust any board's numbers.
+function boardStatsEl(state, ctx, board) {
+  const setEnergy = (energy) => ctx.dispatch({ type: 'setEnergy', boardId: board.boardId, energy });
+  const energyWrap = el('span', { class: 'energy', title: 'Energy' },
+    el('span', { class: 'energy-icon', text: '⚡' }),
+    el('button', { class: 'btn tiny energy-minus', text: '−', onClick: () => setEnergy(board.energy - 1) }),
+    el('button', {
+      class: 'energy-val', text: String(board.energy),
+      title: 'Set an exact energy value',
+      onClick: () => {
+        const v = prompt(`Energy for ${board.name}:`, String(board.energy));
+        if (v == null || !v.trim()) return;
+        const n = Math.round(Number(v));
+        if (Number.isFinite(n)) setEnergy(n);
+      },
+    }),
+    el('button', { class: 'btn tiny energy-plus', text: '+', onClick: () => setEnergy(board.energy + 1) }),
+  );
+
+  const row = el('div', { class: 'board-stats' }, energyWrap);
+
+  const defs = ctx.stateDefs ? ctx.stateDefs() : [];
+  if (defs.length || board.state) {
+    const sel = el('select', { class: 'state-sel' },
+      el('option', { value: '', text: '— no state —' }),
+      defs.map((d) => {
+        const opt = el('option', { value: d.name, text: d.name, title: d.desc });
+        if (d.name === board.state) opt.selected = true;
+        return opt;
+      }),
+      // A state set before the sheet changed stays selectable.
+      board.state && !defs.some((d) => d.name === board.state)
+        ? (() => { const o = el('option', { value: board.state, text: board.state }); o.selected = true; return o; })()
+        : null,
+    );
+    sel.addEventListener('change', () => ctx.dispatch({ type: 'setBoardState', boardId: board.boardId, state: sel.value }));
+    // Hovering the state shows its description by the mouse, like keywords.
+    const descOf = () => defs.find((d) => d.name === (sel.value || board.state))?.desc || '';
+    sel.addEventListener('mouseenter', (e) => { const d = descOf(); if (d) showKwTip(sel.value || board.state, d, e.clientX, e.clientY); });
+    sel.addEventListener('mousemove', (e) => { const d = descOf(); if (d) showKwTip(sel.value || board.state, d, e.clientX, e.clientY); });
+    sel.addEventListener('mouseleave', hideKwTip);
+    row.append(el('label', { class: 'state-wrap' }, el('span', { class: 'state-label', text: 'State' }), sel));
+  }
+  return row;
+}
+
 // One board on the table. The head shows the board's identity plus who is
 // playing it right now; a board with no connected player offers a
 // "Play this board" button so anyone can possess it.
@@ -920,6 +967,8 @@ function seatPanel(state, ctx, board, isMe) {
       onClick: () => ctx.dispatch({ type: 'possessBoard', boardId: board.boardId }),
     }) : null,
   ));
+
+  panel.append(boardStatsEl(state, ctx, board));
 
   if (isMe) {
     const actions = el('div', { class: 'pile-actions' },

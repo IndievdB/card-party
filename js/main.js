@@ -13,6 +13,7 @@ let clientStatus = 'connecting';
 
 // The one shared card library (hardcoded sheet). Loaded at startup.
 let library = [];
+let boardStates = []; // [{ name, desc }] from the sheet's States tab
 let libraryReady = Promise.resolve();
 
 // Base cards start in everyone's pool by default.
@@ -22,8 +23,9 @@ function baseDefs() {
 
 async function loadLibraryNow() {
   try {
-    const { cards, keywords, source } = await loadLibrary();
+    const { cards, keywords, states, source } = await loadLibrary();
     library = cards;
+    boardStates = Array.isArray(states) ? states : [];
     setKeywordDefs(keywords);
     if (source === 'cache') {
       toast('Card sheet unreachable — using the last downloaded card list.', 'warn');
@@ -77,6 +79,7 @@ function gameCtx() {
     myId: identity.playerId,
     myBoardId: me?.boardId || null,
     isHost: session?.role === 'host',
+    stateDefs: () => boardStates,
     // Spectators (or players whose board was taken) start a fresh board.
     // Wait for the library so the Base cards are known to seed it with.
     // The host is the table's organizer: boards they create arrive OPEN
