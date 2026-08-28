@@ -145,6 +145,7 @@ input::placeholder { color: var(--faint); }
   display: flex; gap: 10px; align-items: flex-start; justify-content: space-between;
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
 }
+.lib-card.in-pool .lib-card-main { opacity: .55; }
 .lib-title { font-family: var(--serif); font-weight: 700; font-size: 1.05rem; }
 .lib-desc { font-size: .85rem; color: var(--muted); margin-top: 2px; line-height: 1.45; }
 .lib-upgrades { font-size: .78rem; color: #8a6d1d; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }

@@ -1,7 +1,7 @@
 // App wiring: views, sessions (host/client), library loading, and the game context.
 
 import { store, getIdentity, saveIdentity } from './store.js';
-import { newState, addSeat, cleanName, sanitizeLoadedState, makeCardInstances, shuffle, normalizeCategory } from './game.js';
+import { newState, addSeat, cleanName, sanitizeLoadedState, makeCardInstances, shuffle, normalizeCategory, ownedTitles } from './game.js';
 import { HostSession, ClientSession, randomCode, normalizeCode, peerAvailable } from './net.js';
 import { renderGame, refreshModal, openModal, closeModal, toast, el, setKeywordDefs } from './ui.js';
 import { loadLibrary } from './sheet.js';
@@ -362,6 +362,9 @@ function init() {
   configureBuilder({
     getLibrary: () => library,
     retryLoad: loadLibraryNow,
+    // Pools hold one copy of each card — the builder greys out and never
+    // offers titles the target player already owns.
+    owned: (playerId) => (latestState ? ownedTitles(latestState, playerId) : new Set()),
     add: (defs, targetPlayerId) => {
       dispatch({ type: 'addCards', deck: defs, playerId: targetPlayerId });
       toast(`Shuffled ${defs.length} card${defs.length === 1 ? '' : 's'} into the pool`);

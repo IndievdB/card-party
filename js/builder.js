@@ -10,7 +10,7 @@ import { el, toast, kwEl } from './ui.js';
 import { normalizeCategory, categoryLabel, guideHue } from './game.js';
 import { store } from './store.js';
 
-let deps = { getLibrary: () => [], retryLoad: () => {}, add: () => {} };
+let deps = { getLibrary: () => [], retryLoad: () => {}, add: () => {}, owned: () => new Set() };
 
 function normUp(u) {
   return u && typeof u === 'object' ? u : { text: String(u || ''), sticker: '' };
@@ -46,12 +46,21 @@ function catOf(def) {
   return normalizeCategory(def.category);
 }
 
-function randomDefs(n, distinct = false) {
-  const pool = lib().filter((c) => catOf(c) === 'general');
-  if (!pool.length) return [];
-  if (!distinct) {
-    return Array.from({ length: n }, () => clone(pool[Math.floor(Math.random() * pool.length)]));
-  }
+function titleKey(def) {
+  return String(def?.title || '').toLowerCase();
+}
+
+// Pools hold one copy of each card, so everything the target player already
+// owns is off the menu.
+function ownedNow() {
+  return deps.owned(target) || new Set();
+}
+
+// A distinct random sample of General cards the player doesn't own yet.
+function randomDefs(n, exclude = null) {
+  const owned = ownedNow();
+  const pool = lib().filter((c) =>
+    catOf(c) === 'general' && !owned.has(titleKey(c)) && !exclude?.has(titleKey(c)));
   const idx = [...pool.keys()];
   for (let i = idx.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -64,21 +73,30 @@ function randomDefs(n, distinct = false) {
 
 function startDraft(total, choices) {
   if (!lib().length) return toast('The card library hasn’t loaded yet.', 'warn');
-  // draft pool is General cards
-
-  draft = { total, done: 0, choices, options: randomDefs(choices, true) };
+  // draft pool is General cards not yet in the pool
+  const options = randomDefs(choices);
+  if (!options.length) return toast('Every General card is already in the pool.', 'warn');
+  draft = { total, done: 0, choices, taken: new Set(), options };
   update();
 }
 
 function pickOption(def) {
   deps.add([clone(def)], target); // each pick goes straight into the pool
+  // The broadcast confirming the add is async, so track this draft's picks
+  // locally too — the next options must not repeat them.
+  draft.taken.add(titleKey(def));
   draft.done++;
   if (draft.done >= draft.total) {
     const n = draft.total;
     draft = null;
     toast(`Draft complete — ${n} card${n === 1 ? '' : 's'} added to the pool`);
   } else {
-    draft.options = randomDefs(draft.choices, true);
+    draft.options = randomDefs(draft.choices, draft.taken);
+    if (!draft.options.length) {
+      const n = draft.done;
+      draft = null;
+      toast(`Draft ended early — no unowned cards left (${n} added)`, 'warn');
+    }
   }
   update();
 }
@@ -94,7 +112,9 @@ function build() {
     onClick: () => {
       if (!lib().length) return toast('The card library hasn’t loaded yet.', 'warn');
       const n = Math.max(1, Math.min(60, parseInt(randomCount.value, 10) || 20));
-      deps.add(randomDefs(n), target);
+      const defs = randomDefs(n);
+      if (!defs.length) return toast('Every General card is already in the pool.', 'warn');
+      deps.add(defs, target);
       update();
     },
   });
@@ -142,8 +162,9 @@ function update() {
   else renderLib();
 }
 
-function libRow(def) {
-  const row = el('div', { class: 'lib-card cat-' + catOf(def) },
+function libRow(def, owned) {
+  const inPool = owned.has(titleKey(def));
+  const row = el('div', { class: 'lib-card cat-' + catOf(def) + (inPool ? ' in-pool' : '') },
     el('div', { class: 'lib-card-main' },
       el('div', { class: 'lib-title', text: def.title }),
       el('div', { class: 'lib-cat', text: categoryLabel(def) }),
@@ -157,7 +178,9 @@ function libRow(def) {
       })(),
     ),
     el('div', { class: 'lib-card-actions' },
-      el('button', { class: 'btn small primary', text: '+ Add', onClick: () => deps.add([clone(def)], target) })),
+      inPool
+        ? el('button', { class: 'btn small', text: 'In pool', disabled: true })
+        : el('button', { class: 'btn small primary', text: '+ Add', onClick: () => deps.add([clone(def)], target) })),
   );
   if (catOf(def) === 'spirit') row.style.setProperty('--sg', guideHue(def.spiritGuide));
   return row;
@@ -179,6 +202,7 @@ function renderLib() {
     );
     return;
   }
+  const owned = ownedNow();
   const matches = (c) => !search ||
     (c.title + ' ' + c.description + ' ' + (c.keywords || []).join(' ')).toLowerCase().includes(search);
   const general = pool.filter((c) => catOf(c) === 'general' && matches(c));
@@ -193,20 +217,21 @@ function renderLib() {
   if (general.length || search) {
     parts.libWrap.append(el('div', { class: 'lib-section-head', text: 'General' }));
     if (!general.length) parts.libWrap.append(el('p', { class: 'empty', text: 'No cards match.' }));
-    for (const def of general) parts.libWrap.append(libRow(def));
+    for (const def of general) parts.libWrap.append(libRow(def, owned));
   }
 
-  // Base — everyone starts with these; extra copies can still be added.
+  // Base — everyone starts with these (and repeats aren't allowed, so they
+  // usually all show as "In pool").
   if (base.length) {
     parts.libWrap.append(el('div', { class: 'lib-section-head' }, 'Base',
       el('span', { class: 'hint', text: 'in every pool by default' })));
-    for (const def of base) parts.libWrap.append(libRow(def));
+    for (const def of base) parts.libWrap.append(libRow(def, owned));
   }
 
   // Death
   if (death.length) {
     parts.libWrap.append(el('div', { class: 'lib-section-head', text: 'Death' }));
-    for (const def of death) parts.libWrap.append(libRow(def));
+    for (const def of death) parts.libWrap.append(libRow(def, owned));
   }
 
   // Spirit Guide — pick your guide before its cards can be added.
@@ -230,7 +255,7 @@ function renderLib() {
       parts.libWrap.append(el('p', { class: 'empty', text: 'Select your spirit guide to see and add its cards.' }));
     } else {
       if (!spirit.length) parts.libWrap.append(el('p', { class: 'empty', text: 'No cards match.' }));
-      for (const def of spirit) parts.libWrap.append(libRow(def));
+      for (const def of spirit) parts.libWrap.append(libRow(def, owned));
     }
   }
 }

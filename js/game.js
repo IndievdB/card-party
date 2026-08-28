@@ -109,6 +109,16 @@ export function makeCardInstances(state, seat, defs) {
   return ids;
 }
 
+// Pools hold at most one copy of each card: the titles (lowercased) a player
+// already owns, wherever those cards currently sit on the table.
+export function ownedTitles(state, playerId) {
+  const titles = new Set();
+  for (const card of Object.values(state.cards)) {
+    if (card.ownerId === playerId) titles.add(String(card.title).toLowerCase());
+  }
+  return titles;
+}
+
 export function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -253,13 +263,23 @@ export function applyAction(state, actorId, action) {
 
     // Shuffle newly chosen cards into a pool — your own, or (host only)
     // any player's. The cards belong to the pool's owner either way.
+    // No repeats: a title the player already owns is skipped.
     case 'addCards': {
       const targetId = action.playerId || actorId;
       if (targetId !== actorId && !isHost) return fail('Only the host can add cards to another player’s pool.');
       const target = getSeat(state, targetId);
       if (!target) return fail('No such player.');
-      const ids = makeCardInstances(state, target, action.deck || []);
-      if (!ids.length) return fail('No cards to add.');
+      if (!(action.deck || []).length) return fail('No cards to add.');
+      const owned = ownedTitles(state, targetId);
+      const defs = [];
+      for (const d of action.deck) {
+        const key = String(d?.title || '').toLowerCase();
+        if (!key || owned.has(key)) continue;
+        owned.add(key);
+        defs.push(d);
+      }
+      const ids = makeCardInstances(state, target, defs);
+      if (!ids.length) return fail('Those cards are already in the pool.');
       target.zones.deck.push(...ids);
       shuffle(target.zones.deck);
       break;
