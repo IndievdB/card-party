@@ -742,6 +742,11 @@ function adminModalBody(state, ctx) {
     onClick: () => ctx.reloadSheet?.(),
   }), ' ');
   wrap.append(el('button', {
+    class: 'btn', id: 'admin-reset-block', text: 'Reset everyone’s block to 0',
+    title: 'Set the block number on every board back to 0',
+    onClick: () => { ctx.dispatch({ type: 'resetBlock' }); toast('Block reset to 0 on every board'); },
+  }), ' ');
+  wrap.append(el('button', {
     class: 'btn warn', text: 'Return all cards to their owners’ pools',
     onClick: async () => {
       if (await uiConfirm('Every card goes back to its owner board’s pool, shuffled.', { title: 'Return all cards?', okText: 'Return all' })) {
@@ -935,27 +940,34 @@ function handStripEl(state, ctx, board, isMe) {
   return makeDropTarget(strip, ctx, board.boardId, 'hand');
 }
 
-// Energy counter + optional board state (from the sheet's States tab).
-// Honor system like everything else: anyone can adjust any board's numbers.
-function boardStatsEl(state, ctx, board) {
-  const setEnergy = (energy) => ctx.dispatch({ type: 'setEnergy', boardId: board.boardId, energy });
-  const energyWrap = el('span', { class: 'energy', title: 'Energy' },
-    el('span', { class: 'energy-icon', text: '⚡' }),
-    el('button', { class: 'btn tiny energy-minus', text: '−', onClick: () => setEnergy(board.energy - 1) }),
+// Energy / block / momentum counters + optional board state (from the
+// sheet's States tab). Honor system like everything else: anyone can
+// adjust any board's numbers.
+function statCtl(ctx, board, key, icon, label) {
+  const set = (value) => ctx.dispatch({ type: 'setStat', boardId: board.boardId, stat: key, value });
+  return el('span', { class: 'stat', title: label },
+    el('span', { class: 'stat-icon', text: icon }),
+    el('button', { class: `btn tiny ${key}-minus`, text: '−', onClick: () => set(board[key] - 1) }),
     el('button', {
-      class: 'energy-val', text: String(board.energy),
-      title: 'Set an exact energy value',
+      class: `stat-val ${key}-val`, text: String(board[key]),
+      title: `${label} — click to set an exact value`,
       onClick: async () => {
-        const v = await uiPrompt(`Energy for ${board.name}`, String(board.energy), 'Set');
+        const v = await uiPrompt(`${label} for ${board.name}`, String(board[key]), 'Set');
         if (v == null || !v.trim()) return;
         const n = Math.round(Number(v));
-        if (Number.isFinite(n)) setEnergy(n);
+        if (Number.isFinite(n)) set(n);
       },
     }),
-    el('button', { class: 'btn tiny energy-plus', text: '+', onClick: () => setEnergy(board.energy + 1) }),
+    el('button', { class: `btn tiny ${key}-plus`, text: '+', onClick: () => set(board[key] + 1) }),
   );
+}
 
-  const row = el('div', { class: 'board-stats' }, energyWrap);
+function boardStatsEl(state, ctx, board) {
+  const row = el('div', { class: 'board-stats' },
+    statCtl(ctx, board, 'energy', '⚡', 'Energy'),
+    statCtl(ctx, board, 'block', '🛡', 'Block'),
+    statCtl(ctx, board, 'momentum', '💨', 'Momentum'),
+  );
 
   const defs = ctx.stateDefs ? ctx.stateDefs() : [];
   if (defs.length || board.state) {

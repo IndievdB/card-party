@@ -112,6 +112,8 @@ export function addBoard(state, { boardId, name, createdBy = null }) {
     name: cleanName(name),
     createdBy,
     energy: DEFAULT_ENERGY,
+    block: 0,
+    momentum: 0,
     state: '', // optional board state, from the sheet's States tab
     zones: { deck: [], hand: [], discard: [], delayed: [] },
   };
@@ -141,9 +143,11 @@ export function migrateState(state) {
     delete state.seats;
     state.schema = 2;
   }
-  // Boards stored before energy/state existed get the defaults.
+  // Boards stored before energy/block/momentum/state existed get defaults.
   for (const b of state.boards || []) {
     if (!Number.isFinite(b.energy)) b.energy = DEFAULT_ENERGY;
+    if (!Number.isFinite(b.block)) b.block = 0;
+    if (!Number.isFinite(b.momentum)) b.momentum = 0;
     if (typeof b.state !== 'string') b.state = '';
   }
   return state;
@@ -254,6 +258,8 @@ export function sanitizeLoadedState(rawIn) {
       name: cleanName(b.name),
       createdBy: b.createdBy ? String(b.createdBy) : null,
       energy: Number.isFinite(Number(b.energy)) ? Math.max(-9999, Math.min(9999, Math.round(Number(b.energy)))) : DEFAULT_ENERGY,
+      block: Number.isFinite(Number(b.block)) ? Math.max(-9999, Math.min(9999, Math.round(Number(b.block)))) : 0,
+      momentum: Number.isFinite(Number(b.momentum)) ? Math.max(-9999, Math.min(9999, Math.round(Number(b.momentum)))) : 0,
       state: typeof b.state === 'string' ? b.state.slice(0, 60) : '',
       zones: { deck: [], hand: [], discard: [], delayed: [] },
     };
@@ -329,13 +335,21 @@ export function applyAction(state, actorId, action) {
       break;
     }
 
-    // Anyone may adjust any board's energy — same honor system as cards.
-    case 'setEnergy': {
+    // Anyone may adjust any board's numbers — same honor system as cards.
+    case 'setStat': {
       const board = getBoard(state, action.boardId);
       if (!board) return fail('No such board.');
-      const n = Math.round(Number(action.energy));
-      if (!Number.isFinite(n)) return fail('Energy must be a number.');
-      board.energy = Math.max(-9999, Math.min(9999, n));
+      if (!['energy', 'block', 'momentum'].includes(action.stat)) return fail('Unknown stat.');
+      const n = Math.round(Number(action.value));
+      if (!Number.isFinite(n)) return fail('That stat must be a number.');
+      board[action.stat] = Math.max(-9999, Math.min(9999, n));
+      break;
+    }
+
+    // Host admin: everyone's block back to 0 (e.g. at the start of a round).
+    case 'resetBlock': {
+      if (!isHost) return fail('Only the host can do that.');
+      for (const board of state.boards) board.block = 0;
       break;
     }
 
