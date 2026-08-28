@@ -79,9 +79,17 @@ function gameCtx() {
     isHost: session?.role === 'host',
     // Spectators (or players whose board was taken) start a fresh board.
     // Wait for the library so the Base cards are known to seed it with.
+    // The host is the table's organizer: boards they create arrive OPEN
+    // (named via prompt, not possessed) — they claim one explicitly.
     newBoard: async () => {
+      const hosting = session?.role === 'host';
+      let name;
+      if (hosting) {
+        name = prompt('Name for the new board:', 'Board ' + ((latestState?.boards.length || 0) + 1));
+        if (name == null || !name.trim()) return;
+      }
       await libraryReady;
-      dispatch({ type: 'newBoard', deck: baseDefs() });
+      dispatch({ type: 'newBoard', deck: baseDefs(), possess: !hosting, name });
     },
     // Host admin: set up an extra open board without leaving your own.
     addBoard: async (name) => {

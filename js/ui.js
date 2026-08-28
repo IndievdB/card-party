@@ -802,6 +802,11 @@ function seatPanel(state, ctx, board, isMe) {
         if (name != null && name.trim()) ctx.dispatch({ type: 'renameBoard', boardId: board.boardId, name });
       },
     }) : null,
+    isMe ? el('button', {
+      class: 'btn small unpossess-btn', text: 'Unpossess',
+      title: 'Step away and spectate — the board and its cards stay on the table for anyone to take',
+      onClick: () => ctx.dispatch({ type: 'possessBoard', boardId: null }),
+    }) : null,
     !isMe && !online ? el('button', {
       class: 'btn small claim-btn', text: 'Play this board',
       title: player
