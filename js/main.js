@@ -1,7 +1,7 @@
 // App wiring: views, sessions (host/client), library loading, and the game context.
 
 import { store, getIdentity, saveIdentity } from './store.js';
-import { newState, addPlayer, getPlayer, migrateState, cleanName, sanitizeLoadedState, normalizeCategory, ownedTitles } from './game.js';
+import { newState, addPlayer, getPlayer, cleanName, sanitizeLoadedState, normalizeCategory, ownedTitles } from './game.js';
 import { HostSession, ClientSession, randomCode, normalizeCode, peerAvailable } from './net.js';
 import { renderGame, refreshModal, openModal, closeModal, toast, el, setKeywordDefs, uiPrompt, uiConfirm, uiAlert } from './ui.js';
 import { loadLibrary } from './sheet.js';
@@ -151,9 +151,7 @@ function gameCtx() {
       if (session?.role !== 'host') return toast('Only the host can load a game.', 'warn');
       try {
         const raw = JSON.parse(await file.text());
-        // Save envelope, or a bare state from an older save file.
-        const isEnvelope = raw && typeof raw === 'object' && raw.app === 'card-party' && raw.state;
-        const cleaned = sanitizeLoadedState(isEnvelope ? raw.state : raw);
+        const cleaned = sanitizeLoadedState(raw && typeof raw === 'object' && raw.app === 'card-party' ? raw.state : raw);
         session.loadState(cleaned);
         closeModal();
         toast('Game loaded — players rejoin to reclaim their seats.');
@@ -197,7 +195,6 @@ async function hostGame({ restore = false } = {}) {
     if (state.hostPlayerId !== identity.playerId) {
       return toast('That room was hosted by a different player in this browser.', 'warn');
     }
-    migrateState(state); // rooms saved before players/boards split
     // Everyone shows as disconnected until they reconnect.
     for (const player of state.players) {
       player.connected = player.playerId === identity.playerId;

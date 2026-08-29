@@ -121,38 +121,6 @@ export function addBoard(state, { boardId, name, createdBy = null }) {
   return board;
 }
 
-// Older states (schema 1) had one merged `seats` list. Convert in place:
-// each seat becomes a board (reusing playerId as boardId, so card ownerIds
-// still match) possessed by a player of the same identity.
-export function migrateState(state) {
-  if (!state || typeof state !== 'object') return state;
-  if (Array.isArray(state.seats)) {
-    state.players = state.seats.map((s) => ({
-      playerId: s.playerId,
-      name: s.name,
-      connected: !!s.connected,
-      lastSeen: s.lastSeen || 0,
-      boardId: s.playerId,
-    }));
-    state.boards = state.seats.map((s) => ({
-      boardId: s.playerId,
-      name: s.name,
-      createdBy: s.playerId,
-      zones: s.zones,
-    }));
-    delete state.seats;
-    state.schema = 2;
-  }
-  // Boards stored before energy/block/momentum/state existed get defaults.
-  for (const b of state.boards || []) {
-    if (!Number.isFinite(b.energy)) b.energy = DEFAULT_ENERGY;
-    if (!Number.isFinite(b.block)) b.block = 0;
-    if (!Number.isFinite(b.momentum)) b.momentum = 0;
-    if (typeof b.state !== 'string') b.state = '';
-  }
-  return state;
-}
-
 export function cleanName(name) {
   return String(name || 'Player').trim().slice(0, MAX_NAME) || 'Player';
 }
@@ -219,10 +187,8 @@ function removeFromZones(state, cardId) {
 // dropped, every value re-normalized, zone entries deduped and checked
 // against the card map, and orphan cards discarded. A save holds EVERY
 // board, whether or not a player possesses it — loading with fewer players
-// than boards simply leaves boards open for the taking. Older saves
-// (schema 1, merged seats) are migrated first.
-export function sanitizeLoadedState(rawIn) {
-  const raw = migrateState(rawIn);
+// than boards simply leaves boards open for the taking.
+export function sanitizeLoadedState(raw) {
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.boards) || typeof raw.cards !== 'object' || raw.cards === null) {
     throw new Error('That is not a Card Party save file.');
   }
