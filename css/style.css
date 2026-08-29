@@ -669,6 +669,9 @@ input::placeholder { color: var(--faint); }
 .dialog h3 { font-size: .98rem; }
 .dialog-msg { margin: 0; font-size: .9rem; color: var(--muted); line-height: 1.5; }
 .dialog input { width: 100%; }
+.dialog-stepper { display: flex; align-items: center; gap: 8px; }
+.dialog-stepper input { flex: 1; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dialog-stepper .btn { padding: 8px 14px; font-size: 1rem; line-height: 1.2; flex: none; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .btn.danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn.danger-solid:hover { background: #a93a32; }

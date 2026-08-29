@@ -107,11 +107,12 @@ export function toast(message, kind = 'info') {
 // ---------- themed dialogs (in place of native prompt/confirm/alert) ----------
 // They live in their own layer above the modal, so a modal can open one.
 
-function baseDialog({ title, message, input = false, value = '', okText = 'OK', cancelText = 'Cancel', danger = false }) {
+function baseDialog({ title, message, input = false, numeric = false, value = '', okText = 'OK', cancelText = 'Cancel', danger = false }) {
   return new Promise((resolve) => {
     const root = document.getElementById('dialog-root');
     if (!root) return resolve(input ? null : false);
     let inputEl = null;
+    let inputRow = null;
     const done = (result) => {
       root.replaceChildren();
       document.removeEventListener('keydown', onKey, true);
@@ -124,14 +125,28 @@ function baseDialog({ title, message, input = false, value = '', okText = 'OK', 
     };
     if (input) {
       inputEl = el('input', { value: String(value) });
+      if (numeric) inputEl.setAttribute('inputmode', 'numeric');
       inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+      // Numbers get −/+ steppers around the input for quick nudges;
+      // typing an exact value still works.
+      if (numeric) {
+        const step = (d) => {
+          const n = Math.round(Number(inputEl.value));
+          inputEl.value = String((Number.isFinite(n) ? n : 0) + d);
+        };
+        inputRow = el('div', { class: 'dialog-stepper' },
+          el('button', { class: 'btn step-minus', text: '−', onClick: () => step(-1) }),
+          inputEl,
+          el('button', { class: 'btn step-plus', text: '+', onClick: () => step(1) }),
+        );
+      }
     }
     document.addEventListener('keydown', onKey, true);
     const overlay = el('div', { class: 'dialog-overlay', onClick: (e) => { if (e.target === overlay) cancel(); } },
       el('div', { class: 'dialog' },
         title ? el('h3', { text: title }) : null,
         message ? el('p', { class: 'dialog-msg', text: message }) : null,
-        inputEl,
+        inputRow || inputEl,
         el('div', { class: 'dialog-actions' },
           cancelText != null ? el('button', { class: 'btn dialog-cancel', text: cancelText, onClick: cancel }) : null,
           el('button', { class: 'btn primary' + (danger ? ' danger-solid' : ''), text: okText, onClick: submit }),
@@ -146,6 +161,10 @@ function baseDialog({ title, message, input = false, value = '', okText = 'OK', 
 // Resolves to the entered string, or null if cancelled.
 export function uiPrompt(title, value = '', okText = 'OK') {
   return baseDialog({ title, input: true, value, okText });
+}
+// Number entry with −/+ steppers beside the input.
+export function uiPromptNumber(title, value, okText = 'Set') {
+  return baseDialog({ title, input: true, numeric: true, value, okText });
 }
 // Resolves to true/false.
 export function uiConfirm(message, { title = '', okText = 'OK', danger = false } = {}) {
@@ -950,7 +969,7 @@ function statCtl(ctx, board, key, label) {
       class: `stat-val ${key}-val`, text: String(board[key]),
       title: `Set ${label.toLowerCase()} for ${board.name}`,
       onClick: async () => {
-        const v = await uiPrompt(`${label} for ${board.name}`, String(board[key]), 'Set');
+        const v = await uiPromptNumber(`${label} for ${board.name}`, String(board[key]));
         if (v == null || !v.trim()) return;
         const n = Math.round(Number(v));
         if (Number.isFinite(n)) ctx.dispatch({ type: 'setStat', boardId: board.boardId, stat: key, value: n });
