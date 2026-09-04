@@ -674,8 +674,11 @@ function zoneModalBody(state, ctx, board, zone, params) {
       ),
       el('div', { class: 'zone-row-actions' },
         el('button', { class: 'btn small', text: 'View', onClick: () => openModal('card', { cardId }) }),
+        // Draw any card straight into your own hand — any board's deck,
+        // yours or someone else's (honor system).
         ctx.myBoardId ? el('button', {
-          class: 'btn small', text: '→ my hand',
+          class: 'btn small primary zone-draw', text: zone === 'deck' ? 'Draw' : '→ my hand',
+          title: 'Move this card into your hand',
           onClick: () => ctx.dispatch({ type: 'moveCard', cardId, to: { boardId: ctx.myBoardId, zone: 'hand' } }),
         }) : null,
       ),
