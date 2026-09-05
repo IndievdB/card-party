@@ -56,11 +56,28 @@ function ownedNow() {
   return deps.owned(target) || new Set();
 }
 
-// A distinct random sample of General cards the player doesn't own yet.
-function randomDefs(n, exclude = null) {
+// Draft source: 'general', 'death', or 'guide:<name>' for one spirit guide.
+let draftSource = 'general';
+
+function sourceLabel(source) {
+  if (source === 'death') return 'Death';
+  if (source.startsWith('guide:')) return source.slice(6);
+  return 'General';
+}
+
+function inSource(def, source) {
+  if (source === 'death') return catOf(def) === 'death';
+  if (source.startsWith('guide:')) {
+    return catOf(def) === 'spirit' && String(def.spiritGuide || '').trim() === source.slice(6);
+  }
+  return catOf(def) === 'general';
+}
+
+// A distinct random sample from a source, skipping cards the board owns.
+function sampleDefs(n, source, exclude = null) {
   const owned = ownedNow();
   const pool = lib().filter((c) =>
-    catOf(c) === 'general' && !owned.has(titleKey(c)) && !exclude?.has(titleKey(c)));
+    inSource(c, source) && !owned.has(titleKey(c)) && !exclude?.has(titleKey(c)));
   const idx = [...pool.keys()];
   for (let i = idx.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -69,14 +86,18 @@ function randomDefs(n, exclude = null) {
   return idx.slice(0, Math.min(n, idx.length)).map((i) => clone(pool[i]));
 }
 
+// "Add random" stays a General-cards tool.
+function randomDefs(n, exclude = null) {
+  return sampleDefs(n, 'general', exclude);
+}
+
 // ---------- draft ----------
 
 function startDraft(total, choices) {
   if (!lib().length) return toast('The card library hasn’t loaded yet.', 'warn');
-  // draft pool is General cards not yet in the pool
-  const options = randomDefs(choices);
-  if (!options.length) return toast('Every General card is already in the pool.', 'warn');
-  draft = { total, done: 0, choices, taken: new Set(), options };
+  const options = sampleDefs(choices, draftSource);
+  if (!options.length) return toast(`No unowned ${sourceLabel(draftSource)} cards left to draft.`, 'warn');
+  draft = { total, done: 0, choices, source: draftSource, taken: new Set(), options };
   update();
 }
 
@@ -91,7 +112,7 @@ function pickOption(def) {
     draft = null;
     toast(`Draft complete — ${n} card${n === 1 ? '' : 's'} added to the pool`);
   } else {
-    draft.options = randomDefs(draft.choices, draft.taken);
+    draft.options = sampleDefs(draft.choices, draft.source, draft.taken);
     if (!draft.options.length) {
       const n = draft.done;
       draft = null;
@@ -123,6 +144,9 @@ function build() {
   const draftChoices = el('select', { id: 'bld-draft-choices' },
     el('option', { value: '2', text: '1 of 2' }),
     el('option', { value: '3', text: '1 of 3' }));
+  // Which cards the draft deals from: General, Death, or one spirit guide.
+  parts.draftSource = el('select', { id: 'bld-draft-source' });
+  parts.draftSource.addEventListener('change', () => { draftSource = parts.draftSource.value; });
   const draftBtn = el('button', {
     class: 'btn small', id: 'bld-draft-start', text: 'Start draft',
     onClick: () => startDraft(
@@ -142,7 +166,7 @@ function build() {
   parts.mainView = el('div', {},
     el('div', { class: 'builder-tools' },
       el('span', { class: 'tool-row' }, randomCount, randomBtn),
-      el('span', { class: 'tool-row' }, draftCount, el('span', { class: 'hint', text: 'picks of' }), draftChoices, draftBtn),
+      el('span', { class: 'tool-row' }, draftCount, el('span', { class: 'hint', text: 'picks of' }), draftChoices, el('span', { class: 'hint', text: 'from' }), parts.draftSource, draftBtn),
     ),
     el('div', { class: 'builder-search' }, searchInput, parts.libNote),
     parts.libWrap,
@@ -213,6 +237,17 @@ function renderLib() {
   if (guide && !guides.includes(guide)) guide = '';
   const spirit = spiritAll.filter((c) => matches(c) && guide && String(c.spiritGuide || '').trim() === guide);
 
+  // Draft sources reflect the library: General, Death, each spirit guide.
+  if (draftSource.startsWith('guide:') && !guides.includes(draftSource.slice(6))) draftSource = 'general';
+  parts.draftSource.replaceChildren(el('option', { value: 'general', text: 'General' }));
+  if (pool.some((c) => catOf(c) === 'death')) {
+    parts.draftSource.append(el('option', { value: 'death', text: 'Death' }));
+  }
+  for (const g of guides) {
+    parts.draftSource.append(el('option', { value: 'guide:' + g, text: 'Spirit: ' + g }));
+  }
+  parts.draftSource.value = draftSource;
+
   // General
   if (general.length || search) {
     parts.libWrap.append(el('div', { class: 'lib-section-head', text: 'General' }));
@@ -263,7 +298,7 @@ function renderLib() {
 function renderDraft() {
   parts.draftView.replaceChildren(
     el('div', { class: 'builder-head' },
-      el('span', {}, el('strong', { text: `Pick ${draft.done + 1} of ${draft.total}` }), ` — choose 1 of ${draft.choices}`),
+      el('span', {}, el('strong', { text: `Pick ${draft.done + 1} of ${draft.total}` }), ` — choose 1 of ${draft.choices} · ${sourceLabel(draft.source)} cards`),
       el('button', {
         class: 'btn small warn', id: 'bld-cancel-draft', text: 'Stop drafting',
         onClick: () => { draft = null; update(); },
