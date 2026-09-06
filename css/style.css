@@ -476,12 +476,31 @@ input::placeholder { color: var(--faint); }
   min-width: 38px; text-align: center; padding: 2px 8px; color: var(--text);
 }
 .stat-val:hover { background: #f2f1ed; }
-.state-wrap { display: inline-flex; align-items: center; gap: 6px; }
-.state-label {
-  font-size: .62rem; font-weight: 600; color: var(--faint);
-  text-transform: uppercase; letter-spacing: .1em;
+/* the board's state: full name + description, visible to everyone */
+.board-meta { margin-bottom: 12px; }
+.board-meta .board-stats { margin-bottom: 8px; }
+.board-state {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--bg); border: 1px dashed var(--border-strong); border-radius: 10px;
+  padding: 7px 10px; font-family: var(--sans); color: var(--text);
 }
-.state-sel { padding: 4px 8px; font-size: .84rem; max-width: 160px; }
+.board-state.has-state { background: #fdf8e7; border: 1px solid #e2cf96; }
+.state-name { display: block; font-weight: 700; font-size: .88rem; color: #7a5a0e; overflow-wrap: anywhere; }
+.state-desc { display: block; margin-top: 2px; font-size: .8rem; line-height: 1.45; color: #8a6d1d; }
+.state-none { font-size: .8rem; color: var(--muted); }
+
+/* state picker dialog */
+.dialog.state-picker { max-width: 440px; }
+.state-option-list { display: flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow-y: auto; }
+.state-option {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 9px 12px; font-family: var(--sans); color: var(--text);
+}
+.state-option:hover { background: #f7f6f3; }
+.state-option.selected { border-color: #c9a227; background: #fdf8e7; }
+.state-option-name { display: block; font-weight: 700; font-size: .9rem; overflow-wrap: anywhere; }
+.state-option-desc { display: block; margin-top: 2px; font-size: .8rem; line-height: 1.45; color: var(--muted); }
 .seat-name { font-weight: 600; font-size: .95rem; letter-spacing: -.01em; }
 .seat-sub { font-size: .78rem; color: var(--muted); font-style: italic; }
 .claim-btn { margin-left: auto; }

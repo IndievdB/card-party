@@ -981,36 +981,72 @@ function statCtl(ctx, board, key, label) {
   );
 }
 
+// Themed state picker: every state with its FULL name and description.
+// Resolves to the chosen name, '' for no state, or null if cancelled.
+function pickBoardState(states, current) {
+  return new Promise((resolve) => {
+    const root = document.getElementById('dialog-root');
+    if (!root) return resolve(null);
+    const done = (r) => {
+      root.replaceChildren();
+      document.removeEventListener('keydown', onKey, true);
+      resolve(r);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(null); } };
+    document.addEventListener('keydown', onKey, true);
+    const row = (name, desc, value) => el('button', {
+      class: 'state-option' + ((value || '') === (current || '') ? ' selected' : ''),
+      onClick: () => done(value),
+    },
+      el('span', { class: 'state-option-name', text: name }),
+      desc ? el('span', { class: 'state-option-desc', text: desc }) : null,
+    );
+    const list = el('div', { class: 'state-option-list' }, row('No state', '', ''));
+    for (const s of states) list.append(row(s.name, s.desc, s.name));
+    // A state set before the sheet changed stays choosable.
+    if (current && !states.some((s) => s.name === current)) list.append(row(current, '', current));
+    const overlay = el('div', { class: 'dialog-overlay', onClick: (e) => { if (e.target === overlay) done(null); } },
+      el('div', { class: 'dialog state-picker' },
+        el('h3', { text: 'Board state' }),
+        list,
+        el('div', { class: 'dialog-actions' },
+          el('button', { class: 'btn dialog-cancel', text: 'Cancel', onClick: () => done(null) }),
+        ),
+      ),
+    );
+    root.replaceChildren(overlay);
+  });
+}
+
 function boardStatsEl(state, ctx, board) {
   const row = el('div', { class: 'board-stats' },
     statCtl(ctx, board, 'energy', 'Energy'),
     statCtl(ctx, board, 'block', 'Block'),
     statCtl(ctx, board, 'momentum', 'Momentum'),
   );
+  const wrap = el('div', { class: 'board-meta' }, row);
 
   const defs = ctx.stateDefs ? ctx.stateDefs() : [];
   if (defs.length || board.state) {
-    const sel = el('select', { class: 'state-sel' },
-      el('option', { value: '', text: '— no state —' }),
-      defs.map((d) => {
-        const opt = el('option', { value: d.name, text: d.name, title: d.desc });
-        if (d.name === board.state) opt.selected = true;
-        return opt;
-      }),
-      // A state set before the sheet changed stays selectable.
-      board.state && !defs.some((d) => d.name === board.state)
-        ? (() => { const o = el('option', { value: board.state, text: board.state }); o.selected = true; return o; })()
-        : null,
+    const desc = defs.find((d) => d.name === board.state)?.desc || '';
+    // The chosen state shows in FULL — name and description — for everyone.
+    // Clicking it (or "Set state") opens the picker.
+    const block = el('button', {
+      class: 'board-state' + (board.state ? ' has-state' : ''),
+      title: 'Set this board’s state',
+      onClick: async () => {
+        const v = await pickBoardState(defs, board.state);
+        if (v != null) ctx.dispatch({ type: 'setBoardState', boardId: board.boardId, state: v });
+      },
+    },
+      board.state
+        ? el('span', { class: 'state-name', text: board.state })
+        : el('span', { class: 'state-none', text: '+ Set state' }),
+      board.state && desc ? el('span', { class: 'state-desc', text: desc }) : null,
     );
-    sel.addEventListener('change', () => ctx.dispatch({ type: 'setBoardState', boardId: board.boardId, state: sel.value }));
-    // Hovering the state shows its description by the mouse, like keywords.
-    const descOf = () => defs.find((d) => d.name === (sel.value || board.state))?.desc || '';
-    sel.addEventListener('mouseenter', (e) => { const d = descOf(); if (d) showKwTip(sel.value || board.state, d, e.clientX, e.clientY); });
-    sel.addEventListener('mousemove', (e) => { const d = descOf(); if (d) showKwTip(sel.value || board.state, d, e.clientX, e.clientY); });
-    sel.addEventListener('mouseleave', hideKwTip);
-    row.append(el('label', { class: 'state-wrap' }, el('span', { class: 'state-label', text: 'State' }), sel));
+    wrap.append(block);
   }
-  return row;
+  return wrap;
 }
 
 // One board on the table. The head shows the board's identity plus who is
